@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { api } from "../api";
 
-export default function SendBox({ headNodeId, onTurnComplete, disabled }) {
+export default function SendBox({ branchId, headNodeId, onTurnComplete, disabled }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 
+  const ready = Boolean(branchId && headNodeId);
+
   async function send(e) {
     e.preventDefault();
-    if (!text.trim() || !headNodeId) return;
+    if (!text.trim() || !ready) return;
     setSending(true);
     try {
       const result = await api.agentTurn({
         node_id: headNodeId,
+        branch_id: branchId,
         user_message: text.trim(),
         budget: 4096,
       });
@@ -28,11 +31,11 @@ export default function SendBox({ headNodeId, onTurnComplete, disabled }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Send a message…"
-        disabled={disabled || sending || !headNodeId}
+        disabled={disabled || sending || !ready}
         className="flex-1 border rounded px-3 py-2"
       />
       <button
-        disabled={disabled || sending || !text.trim() || !headNodeId}
+        disabled={disabled || sending || !text.trim() || !ready}
         className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
       >
         {sending ? "…" : "Send"}

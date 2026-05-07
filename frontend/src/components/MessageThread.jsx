@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef } from "react";
+
 const ROLE_STYLES = {
   system: "bg-gray-100 italic text-gray-600",
   user: "bg-blue-50 border-l-4 border-blue-400",
@@ -11,11 +13,35 @@ const SOURCE_BADGE = {
   imported: "bg-purple-200 text-purple-800",
 };
 
+// Pins and imports are reference context, rendered at the top. The actual
+// chat flow (ancestors) sits below in chronological order so the newest
+// message lands at the very bottom — matching standard chat UX.
+const SOURCE_ORDER = { pinned: 0, imported: 1, ancestor: 2 };
+
+function orderForThread(nodes) {
+  return [...nodes].sort((a, b) => {
+    const sa = SOURCE_ORDER[a.source] ?? 9;
+    const sb = SOURCE_ORDER[b.source] ?? 9;
+    if (sa !== sb) return sa - sb;
+    if (a.source === "ancestor" && b.source === "ancestor") {
+      return (b.depth ?? 0) - (a.depth ?? 0);
+    }
+    return 0;
+  });
+}
+
 export default function MessageThread({ nodes = [], loading }) {
+  const ordered = useMemo(() => orderForThread(nodes), [nodes]);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [ordered]);
+
   if (loading) {
     return <div className="p-6 text-gray-500">Loading context…</div>;
   }
-  if (!nodes.length) {
+  if (!ordered.length) {
     return (
       <div className="p-6 text-gray-500">
         No messages yet. Send one below to start the conversation.
@@ -24,7 +50,7 @@ export default function MessageThread({ nodes = [], loading }) {
   }
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-3">
-      {nodes.map((n) => (
+      {ordered.map((n) => (
         <div
           key={n.id}
           className={`rounded p-3 ${ROLE_STYLES[n.role || ""] || "bg-white border"}`}
@@ -46,6 +72,7 @@ export default function MessageThread({ nodes = [], loading }) {
           </div>
         </div>
       ))}
+      <div ref={bottomRef} />
     </div>
   );
 }

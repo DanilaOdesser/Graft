@@ -89,6 +89,7 @@ export default function ConversationView() {
         </header>
         <MessageThread nodes={contextNodes} loading={loadingContext} />
         <SendBox
+          branchId={selected?.id}
           headNodeId={selected?.head_node_id}
           onTurnComplete={handleTurnComplete}
         />

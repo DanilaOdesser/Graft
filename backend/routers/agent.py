@@ -50,9 +50,15 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
     if not parent:
         raise HTTPException(status_code=404, detail="parent node_id not found")
 
-    branch = db.query(Branch).filter(Branch.id == parent.branch_id).first()
+    # The branch is taken from the request, not from parent.branch_id: a
+    # freshly forked branch's head IS the fork node which lives on the parent
+    # branch, so deriving the branch from the parent would route the message
+    # to the wrong branch.
+    branch = db.query(Branch).filter(Branch.id == body.branch_id).first()
     if not branch:
-        raise HTTPException(status_code=500, detail="orphan node — no branch")
+        raise HTTPException(status_code=404, detail="branch_id not found")
+    if branch.conversation_id != parent.conversation_id:
+        raise HTTPException(status_code=400, detail="branch and parent are in different conversations")
 
     # 1. user node
     user_node = Node(
