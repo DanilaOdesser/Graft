@@ -111,8 +111,11 @@ export default function ConversationView() {
     });
 
     es.addEventListener("commit_created", (e) => {
-      const { node, branch } = JSON.parse(e.data);
-      setAllNodes((prev) => prev.some((n) => n.id === node.id) ? prev : [...prev, node]);
+      const { node, branch, summarized_node_ids = [] } = JSON.parse(e.data);
+      setAllNodes((prev) => {
+        const filtered = prev.filter((n) => !summarized_node_ids.includes(n.id));
+        return filtered.some((n) => n.id === node.id) ? filtered : [...filtered, node];
+      });
       setBranches((prev) => prev.map((b) => (b.id === branch.id ? branch : b)));
       setSelected((prev) => (prev?.id === branch.id ? branch : prev));
     });

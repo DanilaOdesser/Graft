@@ -245,6 +245,7 @@ async def commit_branch(
     await publish(str(branch.conversation_id), "commit_created", {
         "node": node_dict,
         "branch": _branch_to_dict(branch),
+        "summarized_node_ids": [str(n.id) for n in uncommitted],
     })
 
     return {"node": node_dict, "commit_message": body.commit_message, "llm_summary": llm_summary}

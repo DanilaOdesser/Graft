@@ -7,6 +7,7 @@ import uuid
 
 from db import get_db
 from models.core import Node, Branch
+from models.context import NodeSummary
 
 router = APIRouter()
 
@@ -59,7 +60,15 @@ def create_node(body: NodeCreate, db: Session = Depends(get_db)):
 
 @router.get("/conversations/{conv_id}/nodes")
 def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Return ALL nodes for a conversation with full parent/branch data (for graph view)."""
+    """Return nodes for a conversation for the graph view.
+
+    Nodes that have been committed (i.e., referenced in node_summaries as
+    summarized_node_id) are excluded — the summary node represents them.
+    """
+    summarized_ids = {
+        str(row.summarized_node_id)
+        for row in db.query(NodeSummary.summarized_node_id).all()
+    }
     nodes = (
         db.query(Node)
         .filter(Node.conversation_id == conv_id)
@@ -79,6 +88,7 @@ def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
             "created_at": str(n.created_at),
         }
         for n in nodes
+        if str(n.id) not in summarized_ids
     ]
 
 
