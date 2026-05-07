@@ -9,7 +9,7 @@ export default function SendBox({ headNodeId, branchId, conversationId, onTurnCo
     if (!message.trim() || !headNodeId) return;
     setSending(true);
     try {
-      await api.agentTurn({ node_id: headNodeId, user_message: message.trim(), budget: 4096 });
+      await api.agentTurn({ node_id: headNodeId, branch_id: branchId, user_message: message.trim(), budget: 4096 });
       setMessage("");
       onTurnComplete?.();
     } catch (err) { console.error("Send failed:", err); }
