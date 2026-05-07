@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,85 @@ from models.core import Branch, Node
 from schemas import BranchCreate
 
 router = APIRouter()
+
+
+QUERY_1_CONTEXT_ASSEMBLY = """
+WITH params AS (
+  SELECT CAST(:current_node_id AS uuid) AS current_node_id,
+         CAST(:budget AS int)           AS budget
+),
+current_branch AS (
+  SELECT n.branch_id
+  FROM nodes n, params p
+  WHERE n.id = p.current_node_id
+),
+ancestor_nodes AS (
+  SELECT n.id, n.content, n.token_count, n.created_at,
+         na.depth,
+         0::smallint AS pin_priority,
+         'ancestor'  AS source
+  FROM node_ancestry na
+  JOIN nodes n ON n.id = na.ancestor_id
+  JOIN params p ON na.descendant_id = p.current_node_id
+),
+pinned_nodes AS (
+  SELECT n.id, n.content, n.token_count, n.created_at,
+         NULL::int AS depth,
+         cp.priority AS pin_priority,
+         'pinned' AS source
+  FROM context_pins cp
+  JOIN current_branch cb ON cp.branch_id = cb.branch_id
+  JOIN nodes n ON n.id = cp.node_id
+),
+imported_nodes AS (
+  SELECT DISTINCT n.id, n.content, n.token_count, n.created_at,
+         NULL::int AS depth,
+         0::smallint AS pin_priority,
+         'imported' AS source
+  FROM context_imports ci
+  JOIN current_branch cb ON ci.target_branch_id = cb.branch_id
+  JOIN node_ancestry na
+    ON na.ancestor_id = ci.source_node_id
+   AND (ci.include_descendants OR na.descendant_id = ci.source_node_id)
+  JOIN nodes n ON n.id = na.descendant_id
+),
+candidates AS (
+  SELECT * FROM ancestor_nodes
+  UNION
+  SELECT * FROM pinned_nodes
+  UNION
+  SELECT * FROM imported_nodes
+),
+elided AS (
+  SELECT ns.summarized_node_id AS node_id
+  FROM node_summaries ns
+  WHERE ns.summary_node_id IN (SELECT id FROM candidates)
+),
+ranked AS (
+  SELECT c.*,
+         ROW_NUMBER() OVER (
+           ORDER BY c.pin_priority DESC,
+                    CASE c.source
+                      WHEN 'pinned'   THEN 0
+                      WHEN 'ancestor' THEN 1
+                      WHEN 'imported' THEN 2
+                    END,
+                    COALESCE(c.depth, 999),
+                    c.created_at DESC
+         ) AS rank
+  FROM candidates c
+  WHERE c.id NOT IN (SELECT node_id FROM elided)
+),
+budgeted AS (
+  SELECT *,
+         SUM(token_count) OVER (ORDER BY rank) AS running_tokens
+  FROM ranked
+)
+SELECT id, source, pin_priority, depth, token_count, running_tokens, content
+FROM budgeted, params
+WHERE running_tokens <= params.budget
+ORDER BY rank;
+"""
 
 
 def _branch_to_dict(b: Branch) -> dict:
@@ -70,3 +150,23 @@ def archive_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
     branch.is_archived = True
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/nodes/{node_id}/context")
+def get_context(node_id: uuid.UUID, budget: int = 4096, db: Session = Depends(get_db)):
+    rows = db.execute(
+        text(QUERY_1_CONTEXT_ASSEMBLY),
+        {"current_node_id": str(node_id), "budget": budget},
+    ).mappings().all()
+    return [
+        {
+            "id": str(r["id"]),
+            "source": r["source"],
+            "pin_priority": r["pin_priority"],
+            "depth": r["depth"],
+            "token_count": r["token_count"],
+            "running_tokens": r["running_tokens"],
+            "content": r["content"],
+        }
+        for r in rows
+    ]
