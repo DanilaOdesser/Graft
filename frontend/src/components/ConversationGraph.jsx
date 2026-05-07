@@ -303,8 +303,9 @@ export default function ConversationGraph({
     });
 
     // PASS 3: Build tree edges between visible nodes.
-    // A commit node's parent_id points to the last message node before it, not the
-    // previous commit. Walk up the parent chain to find the nearest visible ancestor.
+    // Commit nodes now have parent_id pointing directly to the previous commit or root,
+    // so edges resolve directly. The findVisibleAncestor walk handles edge cases where
+    // a branch was forked from a mid-message node before being committed.
     const edges = [];
     nodeDataMap.forEach((n) => {
       if (!isVisible(n) || !n.parent_id) return;

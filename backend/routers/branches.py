@@ -178,15 +178,23 @@ async def commit_branch(
     if head.node_type == "summary":
         raise HTTPException(status_code=400, detail="Nothing to commit — HEAD is already a summary node")
 
-    # Walk ancestors back to the last summary node (exclusive) or root
+    # Walk ancestors collecting uncommitted message nodes.
+    # Stop (without including) at a summary node or system/root node — that
+    # node becomes `previous_visible`, the direct parent of the new commit node.
+    # This ensures commit nodes chain to each other (or to root) rather than
+    # to intermediate message nodes that get excluded from the graph after commit.
     uncommitted: list[Node] = []
+    previous_visible: Node | None = None
     current: Node | None = head
     while current:
+        if current.node_type == "summary" or current.role == "system":
+            previous_visible = current
+            break
         uncommitted.append(current)
-        if current.parent_id is None:
+        if not current.parent_id:
             break
         parent = db.query(Node).filter(Node.id == current.parent_id).first()
-        if parent is None or parent.node_type == "summary":
+        if parent is None:
             break
         current = parent
 
@@ -205,7 +213,7 @@ async def commit_branch(
     summary_node = Node(
         id=uuid.uuid4(),
         conversation_id=branch.conversation_id,
-        parent_id=head.id,
+        parent_id=previous_visible.id if previous_visible else None,
         branch_id=branch.id,
         node_type="summary",
         role=None,
