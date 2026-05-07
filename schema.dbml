@@ -1,0 +1,198 @@
+// =============================================================================
+// Agent Context Management DB
+// "Git for agent conversations" - branchable chats with cross-branch context
+// =============================================================================
+
+// ---------- Users & workspaces ----------
+
+Table users {
+  id uuid [pk]
+  email varchar(255) [unique, not null]
+  display_name varchar(100) [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table conversations {
+  id uuid [pk]
+  owner_id uuid [not null, ref: > users.id]
+  title varchar(200) [not null]
+  root_node_id uuid           // set after first node is created
+  default_branch_id uuid      // typically the "main" branch
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    owner_id
+    (owner_id, updated_at) [name: 'idx_conv_owner_recent']
+  }
+}
+
+// ---------- The DAG: nodes are the unit of conversation history ----------
+
+Table nodes {
+  id uuid [pk]
+  conversation_id uuid [not null, ref: > conversations.id]
+  parent_id uuid [ref: > nodes.id]   // null only for the root node
+  branch_id uuid [not null, ref: > branches.id]  // which branch this node was authored on
+  node_type varchar(20) [not null]   // 'message' | 'commit' | 'merge' | 'summary'
+  role varchar(20)                   // 'user' | 'assistant' | 'system' | null for commits
+  content text [not null]
+  token_count int [not null, default: 0]
+  embedding "vector(1536)"           // pgvector; nullable until embedded
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    conversation_id
+    parent_id
+    branch_id
+    (conversation_id, created_at) [name: 'idx_nodes_conv_recent']
+    embedding [type: hnsw, name: 'idx_nodes_embedding_hnsw']
+  }
+}
+
+// Closure table: one row per (ancestor, descendant) pair, including self.
+// Lets ancestry checks be a single indexed join instead of recursive walks.
+Table node_ancestry {
+  ancestor_id uuid [not null, ref: > nodes.id]
+  descendant_id uuid [not null, ref: > nodes.id]
+  depth int [not null]   // 0 = self, 1 = direct parent, etc.
+
+  Indexes {
+    (ancestor_id, descendant_id) [pk]
+    (descendant_id, depth) [name: 'idx_ancestry_desc_depth']
+  }
+}
+
+// ---------- Branches: named pointers into the DAG ----------
+
+Table branches {
+  id uuid [pk]
+  conversation_id uuid [not null, ref: > conversations.id]
+  name varchar(100) [not null]
+  head_node_id uuid [ref: > nodes.id]    // current leaf; null for a fresh empty branch
+  base_node_id uuid [ref: > nodes.id]    // fork point; null for the root branch
+  created_by uuid [not null, ref: > users.id]
+  is_archived boolean [not null, default: false]
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (conversation_id, name) [unique, name: 'uniq_branch_name_per_conv']
+    head_node_id
+    base_node_id
+    (conversation_id, is_archived) [name: 'idx_branch_active']
+  }
+}
+
+// ---------- Cross-branch context features ----------
+
+// User explicitly pins a node to always be in context on a given branch
+// (regardless of whether that node is an ancestor of the branch's head).
+Table context_pins {
+  id uuid [pk]
+  branch_id uuid [not null, ref: > branches.id]
+  node_id uuid [not null, ref: > nodes.id]
+  pinned_by uuid [not null, ref: > users.id]
+  reason text                    // optional user note
+  priority smallint [not null, default: 0]   // higher = include first under budget pressure
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (branch_id, node_id) [unique]
+    (branch_id, priority) [name: 'idx_pins_branch_priority']
+  }
+}
+
+// User cherry-picks a node (or a subtree rooted at a node) from another branch
+// into the current branch's available context.
+Table context_imports {
+  id uuid [pk]
+  target_branch_id uuid [not null, ref: > branches.id]
+  source_node_id uuid [not null, ref: > nodes.id]
+  include_descendants boolean [not null, default: false]  // pull whole subtree or just node
+  imported_by uuid [not null, ref: > users.id]
+  imported_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (target_branch_id, imported_at) [name: 'idx_imports_target_recent']
+    source_node_id
+  }
+}
+
+// ---------- Memory: distilled facts above the raw message layer ----------
+
+Table memories {
+  id uuid [pk]
+  conversation_id uuid [not null, ref: > conversations.id]
+  branch_id uuid [ref: > branches.id]   // null = promoted to conversation-global
+  formed_at_node_id uuid [not null, ref: > nodes.id]
+  content text [not null]
+  importance smallint [not null, default: 50]   // 0-100
+  embedding "vector(1536)"
+  superseded_by uuid [ref: > memories.id]       // self-reference for supersession chain
+  superseded_at_node_id uuid [ref: > nodes.id]  // where the supersession happened
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    conversation_id
+    branch_id
+    formed_at_node_id
+    (conversation_id, branch_id) [name: 'idx_mem_conv_branch']
+    embedding [type: hnsw, name: 'idx_mem_embedding_hnsw']
+  }
+}
+
+// Promotion log: track when a memory was elevated from branch-scoped to global.
+Table memory_promotions {
+  id uuid [pk]
+  memory_id uuid [not null, ref: > memories.id]
+  from_branch_id uuid [ref: > branches.id]
+  promoted_by uuid [ref: > users.id]   // null = auto-promotion
+  reason varchar(50) [not null]        // 'manual' | 'cross_branch_usage' | 'high_importance'
+  promoted_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    memory_id
+    promoted_at
+  }
+}
+
+// ---------- Summarization: a node can summarize a range of other nodes ----------
+
+Table node_summaries {
+  summary_node_id uuid [not null, ref: > nodes.id]
+  summarized_node_id uuid [not null, ref: > nodes.id]
+
+  Indexes {
+    (summary_node_id, summarized_node_id) [pk]
+    summarized_node_id
+  }
+}
+
+// ---------- Tags & social layer (Faker territory) ----------
+
+Table tags {
+  id uuid [pk]
+  name varchar(50) [unique, not null]
+}
+
+Table node_tags {
+  node_id uuid [not null, ref: > nodes.id]
+  tag_id uuid [not null, ref: > tags.id]
+
+  Indexes {
+    (node_id, tag_id) [pk]
+    tag_id
+  }
+}
+
+Table branch_shares {
+  id uuid [pk]
+  branch_id uuid [not null, ref: > branches.id]
+  shared_with uuid [ref: > users.id]   // null = public
+  permission varchar(20) [not null]     // 'view' | 'fork' | 'comment'
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (branch_id, shared_with) [unique]
+  }
+}
