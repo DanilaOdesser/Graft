@@ -1,0 +1,715 @@
+{
+  "_meta": {
+    "description": "Sample data for Graft — 'Git for agent conversations'",
+    "scenario": "A developer named Alex builds a recipe-sharing web app called 'RecipeBox' across 6 coding sessions, one per feature. The data showcases branching, pinning, importing, summarization, divergence, and full-text search.",
+    "note_on_ancestry": "The node_ancestry table below shows a representative subset. In production, the closure-table trigger auto-populates all (ancestor, descendant, depth) pairs on every INSERT into nodes."
+  },
+
+  "users": [
+    {
+      "id": "u-alex",
+      "email": "alex.chen@example.com",
+      "display_name": "Alex Chen",
+      "created_at": "2026-04-28T09:00:00Z"
+    },
+    {
+      "id": "u-jamie",
+      "email": "jamie.lee@example.com",
+      "display_name": "Jamie Lee",
+      "created_at": "2026-04-28T09:05:00Z"
+    }
+  ],
+
+  "conversations": [
+    {
+      "id": "conv-recipebox",
+      "owner_id": "u-alex",
+      "title": "Building RecipeBox",
+      "root_node_id": "n-01",
+      "default_branch_id": "br-main",
+      "created_at": "2026-05-01T10:00:00Z",
+      "updated_at": "2026-05-06T17:30:00Z"
+    }
+  ],
+
+  "branches": [
+    {
+      "id": "br-main",
+      "conversation_id": "conv-recipebox",
+      "name": "main",
+      "head_node_id": "n-35",
+      "base_node_id": null,
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-01T10:00:00Z"
+    },
+    {
+      "id": "br-auth",
+      "conversation_id": "conv-recipebox",
+      "name": "feat/auth",
+      "head_node_id": "n-13",
+      "base_node_id": "n-07",
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-02T09:00:00Z"
+    },
+    {
+      "id": "br-recipe-crud",
+      "conversation_id": "conv-recipebox",
+      "name": "feat/recipe-crud",
+      "head_node_id": "n-17",
+      "base_node_id": "n-07",
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-03T10:00:00Z"
+    },
+    {
+      "id": "br-image-upload",
+      "conversation_id": "conv-recipebox",
+      "name": "feat/image-upload",
+      "head_node_id": "n-19",
+      "base_node_id": "n-17",
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-04T10:00:00Z"
+    },
+    {
+      "id": "br-s3-approach",
+      "conversation_id": "conv-recipebox",
+      "name": "spike/s3-upload",
+      "head_node_id": "n-23",
+      "base_node_id": "n-19",
+      "created_by": "u-alex",
+      "is_archived": true,
+      "created_at": "2026-05-04T11:00:00Z"
+    },
+    {
+      "id": "br-cloudinary",
+      "conversation_id": "conv-recipebox",
+      "name": "spike/cloudinary-upload",
+      "head_node_id": "n-27",
+      "base_node_id": "n-19",
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-04T13:00:00Z"
+    },
+    {
+      "id": "br-search",
+      "conversation_id": "conv-recipebox",
+      "name": "feat/search",
+      "head_node_id": "n-31",
+      "base_node_id": "n-07",
+      "created_by": "u-alex",
+      "is_archived": false,
+      "created_at": "2026-05-05T10:00:00Z"
+    }
+  ],
+
+  "nodes": [
+    {
+      "_session": "Session 1 — Project Setup (May 1, main branch)",
+      "id": "n-01",
+      "conversation_id": "conv-recipebox",
+      "parent_id": null,
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "system",
+      "content": "You are an expert full-stack developer. Help the user build production-quality web applications using FastAPI, PostgreSQL, and React. Write clean, well-structured code with proper error handling.",
+      "token_count": 42,
+      "created_at": "2026-05-01T10:00:00Z"
+    },
+    {
+      "id": "n-02",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-01",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "user",
+      "content": "I'm starting a new project called RecipeBox — a recipe sharing web app where users can create, share, and discover recipes. Let's set it up with FastAPI and PostgreSQL. Give me the project scaffold with proper directory structure.",
+      "token_count": 55,
+      "created_at": "2026-05-01T10:01:00Z"
+    },
+    {
+      "id": "n-03",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-02",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Here's the RecipeBox project scaffold:\n\n```\nrecipebox/\n├── app/\n│   ├── __init__.py\n│   ├── main.py            # FastAPI entry point\n│   ├── config.py          # Settings via pydantic-settings\n│   ├── database.py        # SQLAlchemy engine + session\n│   ├── models/            # ORM models\n│   ├── schemas/           # Pydantic request/response\n│   ├── routers/           # API route modules\n│   └── services/          # Business logic\n├── alembic/               # DB migrations\n├── tests/\n├── requirements.txt\n└── docker-compose.yml     # Postgres + app\n```\n\nI've set up SQLAlchemy 2.0 with async sessions, Alembic for migrations, and a docker-compose with PostgreSQL 16. The config reads DATABASE_URL from environment.",
+      "token_count": 185,
+      "created_at": "2026-05-01T10:02:00Z"
+    },
+    {
+      "id": "n-04",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-03",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "user",
+      "content": "Now let's define the database schema. I need tables for users, recipes, ingredients, and categories. Recipes belong to users and categories.",
+      "token_count": 35,
+      "created_at": "2026-05-01T10:10:00Z"
+    },
+    {
+      "id": "n-05",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-04",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Here's the core schema:\n\n```sql\nCREATE TABLE users (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    email VARCHAR(255) UNIQUE NOT NULL,\n    username VARCHAR(50) UNIQUE NOT NULL,\n    password_hash VARCHAR(255) NOT NULL,\n    bio TEXT,\n    avatar_url TEXT,\n    created_at TIMESTAMPTZ DEFAULT now()\n);\n\nCREATE TABLE categories (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    name VARCHAR(100) UNIQUE NOT NULL,\n    slug VARCHAR(100) UNIQUE NOT NULL\n);\n\nCREATE TABLE recipes (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    author_id UUID NOT NULL REFERENCES users(id),\n    category_id UUID REFERENCES categories(id),\n    title VARCHAR(200) NOT NULL,\n    description TEXT,\n    instructions TEXT NOT NULL,\n    prep_time_min INT,\n    cook_time_min INT,\n    servings INT,\n    difficulty VARCHAR(20) CHECK (difficulty IN ('easy','medium','hard')),\n    is_published BOOLEAN DEFAULT false,\n    created_at TIMESTAMPTZ DEFAULT now(),\n    updated_at TIMESTAMPTZ DEFAULT now()\n);\n\nCREATE TABLE ingredients (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    name VARCHAR(100) UNIQUE NOT NULL\n);\n```\n\nIndexes on `recipes.author_id`, `recipes.category_id`, and `recipes.created_at` for listing queries. The `users` table stores password hashes — we'll use bcrypt when we build auth.",
+      "token_count": 450,
+      "created_at": "2026-05-01T10:12:00Z"
+    },
+    {
+      "id": "n-06",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-05",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "user",
+      "content": "Good, but we also need a recipe_ingredients junction table with quantity and unit, and a reviews table for user ratings.",
+      "token_count": 30,
+      "created_at": "2026-05-01T10:20:00Z"
+    },
+    {
+      "id": "n-07",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-06",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Added the junction and reviews tables:\n\n```sql\nCREATE TABLE recipe_ingredients (\n    recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,\n    ingredient_id UUID NOT NULL REFERENCES ingredients(id),\n    quantity DECIMAL(10,2),\n    unit VARCHAR(30),\n    notes VARCHAR(200),\n    display_order INT NOT NULL DEFAULT 0,\n    PRIMARY KEY (recipe_id, ingredient_id)\n);\n\nCREATE TABLE reviews (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,\n    reviewer_id UUID NOT NULL REFERENCES users(id),\n    rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),\n    comment TEXT,\n    created_at TIMESTAMPTZ DEFAULT now(),\n    UNIQUE (recipe_id, reviewer_id)\n);\n\nCREATE INDEX idx_reviews_recipe ON reviews(recipe_id);\nCREATE INDEX idx_reviews_reviewer ON reviews(reviewer_id);\n```\n\n`recipe_ingredients` uses a composite PK and includes `display_order` so ingredient lists render in the right order. `reviews` enforces one review per user per recipe with a UNIQUE constraint. The schema now has 6 tables: users, categories, recipes, ingredients, recipe_ingredients, reviews.",
+      "token_count": 380,
+      "created_at": "2026-05-01T10:22:00Z"
+    },
+
+    {
+      "_session": "Session 2 — Authentication (May 2, feat/auth branch, forked from n-07)",
+      "id": "n-08",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-07",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "user",
+      "content": "Let's build user authentication. I want JWT access tokens with bcrypt password hashing. Include signup, login, and a /me endpoint.",
+      "token_count": 35,
+      "created_at": "2026-05-02T09:05:00Z"
+    },
+    {
+      "id": "n-09",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-08",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Here's the auth module:\n\n```python\n# app/services/auth.py\nfrom passlib.context import CryptContext\nfrom jose import jwt\nfrom datetime import datetime, timedelta\n\npwd_context = CryptContext(schemes=['bcrypt'])\nSECRET_KEY = settings.secret_key\nALGORITHM = 'HS256'\nACCESS_TOKEN_EXPIRE = timedelta(minutes=30)\n\ndef hash_password(password: str) -> str:\n    return pwd_context.hash(password)\n\ndef verify_password(plain: str, hashed: str) -> bool:\n    return pwd_context.verify(plain, hashed)\n\ndef create_access_token(user_id: str) -> str:\n    expire = datetime.utcnow() + ACCESS_TOKEN_EXPIRE\n    return jwt.encode({'sub': user_id, 'exp': expire}, SECRET_KEY, ALGORITHM)\n```\n\n```python\n# app/routers/auth.py\n@router.post('/signup', status_code=201)\nasync def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):\n    hashed = hash_password(body.password)\n    user = User(email=body.email, username=body.username, password_hash=hashed)\n    db.add(user)\n    await db.commit()\n    return {'access_token': create_access_token(str(user.id))}\n\n@router.post('/login')\nasync def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):\n    user = await get_user_by_email(db, body.email)\n    if not user or not verify_password(body.password, user.password_hash):\n        raise HTTPException(401, 'Invalid credentials')\n    return {'access_token': create_access_token(str(user.id))}\n\n@router.get('/me')\nasync def me(current_user: User = Depends(get_current_user)):\n    return UserResponse.model_validate(current_user)\n```\n\nThe `get_current_user` dependency extracts and validates the JWT from the Authorization header. Tokens expire after 30 minutes.",
+      "token_count": 520,
+      "created_at": "2026-05-02T09:08:00Z"
+    },
+    {
+      "id": "n-10",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-09",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "user",
+      "content": "Add email verification. After signup, users get a verification email with a token link. Unverified users can't create recipes.",
+      "token_count": 32,
+      "created_at": "2026-05-02T09:30:00Z"
+    },
+    {
+      "id": "n-11",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-10",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Email verification implementation:\n\n```python\n# Added to users table\n# is_verified BOOLEAN DEFAULT false\n# verification_token UUID DEFAULT gen_random_uuid()\n# token_expires_at TIMESTAMPTZ\n\n# app/services/email.py\nasync def send_verification_email(user: User):\n    token = user.verification_token\n    link = f'{settings.frontend_url}/verify?token={token}'\n    await send_email(\n        to=user.email,\n        subject='Verify your RecipeBox account',\n        body=f'Click to verify: {link}'\n    )\n\n# app/routers/auth.py\n@router.get('/verify')\nasync def verify_email(token: UUID, db: AsyncSession = Depends(get_db)):\n    user = await db.execute(\n        select(User).where(\n            User.verification_token == token,\n            User.token_expires_at > datetime.utcnow()\n        )\n    )\n    user = user.scalar_one_or_none()\n    if not user:\n        raise HTTPException(400, 'Invalid or expired token')\n    user.is_verified = True\n    user.verification_token = None\n    await db.commit()\n    return {'message': 'Email verified'}\n```\n\nI also added a `require_verified` dependency that checks `current_user.is_verified` and returns 403 if not. Use it on recipe creation endpoints.",
+      "token_count": 480,
+      "created_at": "2026-05-02T09:35:00Z"
+    },
+    {
+      "id": "n-12",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-11",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "user",
+      "content": "Now add Google OAuth so users can sign up / log in with their Google account as an alternative to email+password.",
+      "token_count": 28,
+      "created_at": "2026-05-02T10:00:00Z"
+    },
+    {
+      "id": "n-13",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-12",
+      "branch_id": "br-auth",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Google OAuth integration using authlib:\n\n```python\n# app/services/oauth.py\nfrom authlib.integrations.starlette_client import OAuth\n\noauth = OAuth()\noauth.register(\n    name='google',\n    client_id=settings.google_client_id,\n    client_secret=settings.google_client_secret,\n    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',\n    client_kwargs={'scope': 'openid email profile'}\n)\n\n# app/routers/auth.py\n@router.get('/login/google')\nasync def google_login(request: Request):\n    redirect_uri = request.url_for('google_callback')\n    return await oauth.google.authorize_redirect(request, redirect_uri)\n\n@router.get('/callback/google')\nasync def google_callback(request: Request, db: AsyncSession = Depends(get_db)):\n    token = await oauth.google.authorize_access_token(request)\n    user_info = token.get('userinfo')\n    \n    user = await get_or_create_oauth_user(\n        db, email=user_info['email'],\n        name=user_info['name'],\n        provider='google',\n        provider_id=user_info['sub']\n    )\n    user.is_verified = True  # Google already verified the email\n    await db.commit()\n    return {'access_token': create_access_token(str(user.id))}\n```\n\nI added an `oauth_provider` and `oauth_provider_id` column to the users table. If a user with the same email already exists (signed up via password), we link the accounts. Google-authenticated users are automatically marked as verified.",
+      "token_count": 550,
+      "created_at": "2026-05-02T10:05:00Z"
+    },
+
+    {
+      "_session": "Session 3 — Recipe CRUD (May 3, feat/recipe-crud branch, forked from n-07)",
+      "id": "n-14",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-07",
+      "branch_id": "br-recipe-crud",
+      "node_type": "message",
+      "role": "user",
+      "content": "Let's build the recipe CRUD API. I need endpoints to create, read, update, and delete recipes with proper input validation.",
+      "token_count": 30,
+      "created_at": "2026-05-03T10:05:00Z"
+    },
+    {
+      "id": "n-15",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-14",
+      "branch_id": "br-recipe-crud",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Here are the Recipe Pydantic schemas and CRUD endpoints:\n\n```python\n# app/schemas/recipe.py\nclass RecipeCreate(BaseModel):\n    title: str = Field(max_length=200)\n    description: str | None = None\n    instructions: str\n    category_id: UUID | None = None\n    prep_time_min: int = Field(ge=0, le=1440)\n    cook_time_min: int = Field(ge=0, le=1440)\n    servings: int = Field(ge=1, le=100)\n    difficulty: Literal['easy', 'medium', 'hard']\n    ingredients: list[IngredientInput]\n\nclass RecipeResponse(BaseModel):\n    id: UUID\n    title: str\n    description: str | None\n    author: UserSummary\n    category: CategoryResponse | None\n    ingredients: list[IngredientResponse]\n    prep_time_min: int\n    cook_time_min: int\n    servings: int\n    difficulty: str\n    avg_rating: float | None\n    created_at: datetime\n\n# app/routers/recipes.py\n@router.post('/', status_code=201)\nasync def create_recipe(\n    body: RecipeCreate,\n    user: User = Depends(get_current_user),\n    db: AsyncSession = Depends(get_db)\n):\n    recipe = Recipe(**body.model_dump(exclude={'ingredients'}), author_id=user.id)\n    db.add(recipe)\n    for ing in body.ingredients:\n        ingredient = await get_or_create_ingredient(db, ing.name)\n        recipe_ing = RecipeIngredient(\n            recipe_id=recipe.id, ingredient_id=ingredient.id,\n            quantity=ing.quantity, unit=ing.unit, display_order=ing.order\n        )\n        db.add(recipe_ing)\n    await db.commit()\n    return await get_recipe_with_relations(db, recipe.id)\n\n@router.get('/{recipe_id}')\nasync def get_recipe(recipe_id: UUID, db: AsyncSession = Depends(get_db)):\n    recipe = await get_recipe_with_relations(db, recipe_id)\n    if not recipe:\n        raise HTTPException(404)\n    return recipe\n\n@router.put('/{recipe_id}')\nasync def update_recipe(\n    recipe_id: UUID, body: RecipeUpdate,\n    user: User = Depends(get_current_user),\n    db: AsyncSession = Depends(get_db)\n):\n    recipe = await get_recipe_or_404(db, recipe_id)\n    if recipe.author_id != user.id:\n        raise HTTPException(403)\n    for field, value in body.model_dump(exclude_unset=True).items():\n        setattr(recipe, field, value)\n    await db.commit()\n    return await get_recipe_with_relations(db, recipe.id)\n\n@router.delete('/{recipe_id}', status_code=204)\nasync def delete_recipe(\n    recipe_id: UUID,\n    user: User = Depends(get_current_user),\n    db: AsyncSession = Depends(get_db)\n):\n    recipe = await get_recipe_or_404(db, recipe_id)\n    if recipe.author_id != user.id:\n        raise HTTPException(403)\n    await db.delete(recipe)\n    await db.commit()\n```\n\nThe `get_recipe_with_relations` helper uses `selectinload` for eager-loading ingredients, category, and author in a single query. `RecipeUpdate` is a partial model (all fields optional) so you can PATCH individual fields.",
+      "token_count": 600,
+      "created_at": "2026-05-03T10:10:00Z"
+    },
+    {
+      "id": "n-16",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-15",
+      "branch_id": "br-recipe-crud",
+      "node_type": "message",
+      "role": "user",
+      "content": "Add cursor-based pagination to the recipe listing, and filtering by category, maximum cook time, and difficulty level.",
+      "token_count": 28,
+      "created_at": "2026-05-03T10:30:00Z"
+    },
+    {
+      "id": "n-17",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-16",
+      "branch_id": "br-recipe-crud",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Cursor-based pagination with multi-field filtering:\n\n```python\n# app/schemas/recipe.py\nclass RecipeListParams(BaseModel):\n    cursor: UUID | None = None\n    limit: int = Field(default=20, ge=1, le=100)\n    category_slug: str | None = None\n    max_cook_time: int | None = Field(default=None, ge=0)\n    difficulty: Literal['easy', 'medium', 'hard'] | None = None\n    sort_by: Literal['created_at', 'avg_rating', 'cook_time'] = 'created_at'\n\n# app/routers/recipes.py\n@router.get('/')\nasync def list_recipes(\n    params: RecipeListParams = Depends(),\n    db: AsyncSession = Depends(get_db)\n):\n    query = select(Recipe).where(Recipe.is_published == True)\n\n    if params.category_slug:\n        query = query.join(Category).where(Category.slug == params.category_slug)\n    if params.max_cook_time is not None:\n        query = query.where(Recipe.cook_time_min <= params.max_cook_time)\n    if params.difficulty:\n        query = query.where(Recipe.difficulty == params.difficulty)\n    if params.cursor:\n        cursor_recipe = await db.get(Recipe, params.cursor)\n        if cursor_recipe:\n            query = query.where(Recipe.created_at < cursor_recipe.created_at)\n\n    query = query.order_by(Recipe.created_at.desc()).limit(params.limit + 1)\n    results = (await db.execute(query)).scalars().all()\n\n    has_next = len(results) > params.limit\n    recipes = results[:params.limit]\n    next_cursor = str(recipes[-1].id) if has_next else None\n\n    return {\n        'recipes': [RecipeResponse.model_validate(r) for r in recipes],\n        'next_cursor': next_cursor\n    }\n```\n\nThe cursor is the UUID of the last item — we fetch `limit + 1` rows to detect if there's a next page. Filters are composable and all optional. The `category_slug` filter joins on the categories table using the slug for clean URLs.",
+      "token_count": 520,
+      "created_at": "2026-05-03T10:35:00Z"
+    },
+
+    {
+      "_session": "Session 4 — Image Upload Exploration (May 4, feat/image-upload branch, forked from n-17)",
+      "id": "n-18",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-17",
+      "branch_id": "br-image-upload",
+      "node_type": "message",
+      "role": "user",
+      "content": "Recipes need image uploads — at least a hero image and optionally step-by-step photos. What are our best options for a small project like this?",
+      "token_count": 35,
+      "created_at": "2026-05-04T10:05:00Z"
+    },
+    {
+      "id": "n-19",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-18",
+      "branch_id": "br-image-upload",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Two solid approaches for image handling:\n\n**Option A — AWS S3 with presigned URLs:**\n- Backend generates a presigned PUT URL; frontend uploads directly to S3.\n- Pros: Full control, cheap storage, scales infinitely.\n- Cons: You manage resize/optimization yourself (usually via Lambda), need CloudFront for CDN, more operational overhead.\n\n**Option B — Cloudinary:**\n- Upload via their SDK, get back a URL with on-the-fly transforms.\n- Pros: Built-in resize, crop, format conversion (WebP/AVIF), CDN included. One SDK call.\n- Cons: Usage-based pricing, vendor lock-in on URLs.\n\nFor a project this size, I'd lean toward Cloudinary — it eliminates the Lambda resize pipeline and gives you responsive image transforms for free. But let's prototype both so you can decide with real code.",
+      "token_count": 350,
+      "created_at": "2026-05-04T10:08:00Z"
+    },
+
+    {
+      "_session": "Session 4a — S3 Spike (May 4, spike/s3-upload branch, forked from n-19)",
+      "id": "n-20",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-19",
+      "branch_id": "br-s3-approach",
+      "node_type": "message",
+      "role": "user",
+      "content": "Let's prototype the S3 presigned URL approach first. Show me the upload flow.",
+      "token_count": 22,
+      "created_at": "2026-05-04T11:05:00Z"
+    },
+    {
+      "id": "n-21",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-20",
+      "branch_id": "br-s3-approach",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "S3 presigned URL upload flow:\n\n```python\n# app/services/storage.py\nimport boto3\nfrom botocore.config import Config\n\ns3 = boto3.client('s3', config=Config(signature_version='s3v4'))\n\ndef generate_upload_url(user_id: str, filename: str, content_type: str) -> dict:\n    key = f'recipes/{user_id}/{uuid4()}/{filename}'\n    url = s3.generate_presigned_url(\n        'put_object',\n        Params={\n            'Bucket': settings.s3_bucket,\n            'Key': key,\n            'ContentType': content_type,\n        },\n        ExpiresIn=300  # 5 minutes\n    )\n    return {'upload_url': url, 'key': key}\n\n# app/routers/uploads.py\n@router.post('/upload-url')\nasync def get_upload_url(\n    filename: str, content_type: str,\n    user: User = Depends(get_current_user)\n):\n    if content_type not in ('image/jpeg', 'image/png', 'image/webp'):\n        raise HTTPException(400, 'Unsupported image type')\n    return generate_upload_url(str(user.id), filename, content_type)\n```\n\nFrontend flow: (1) call `/upload-url` to get presigned URL, (2) PUT the file directly to S3, (3) send the returned `key` back to the recipe create/update endpoint. Images are stored at `s3://bucket/recipes/{user_id}/{uuid}/{filename}`.",
+      "token_count": 480,
+      "created_at": "2026-05-04T11:10:00Z"
+    },
+    {
+      "id": "n-22",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-21",
+      "branch_id": "br-s3-approach",
+      "node_type": "message",
+      "role": "user",
+      "content": "We need image resizing too — generate thumbnails (200x200) and medium (800x600) versions automatically after upload. I guess that means Lambda triggers?",
+      "token_count": 35,
+      "created_at": "2026-05-04T11:30:00Z"
+    },
+    {
+      "id": "n-23",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-22",
+      "branch_id": "br-s3-approach",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Yes, here's the resize pipeline with Lambda:\n\n```python\n# lambda/resize.py — deployed as AWS Lambda\nimport boto3\nfrom PIL import Image\nimport io\n\nSIZES = {\n    'thumb': (200, 200),\n    'medium': (800, 600),\n}\n\ndef handler(event, context):\n    s3 = boto3.client('s3')\n    bucket = event['Records'][0]['s3']['bucket']['name']\n    key = event['Records'][0]['s3']['object']['key']\n    \n    obj = s3.get_object(Bucket=bucket, Key=key)\n    img = Image.open(io.BytesIO(obj['Body'].read()))\n    \n    for suffix, size in SIZES.items():\n        resized = img.copy()\n        resized.thumbnail(size, Image.LANCZOS)\n        buffer = io.BytesIO()\n        resized.save(buffer, format='WEBP', quality=85)\n        buffer.seek(0)\n        \n        new_key = key.rsplit('.', 1)[0] + f'_{suffix}.webp'\n        s3.put_object(Bucket=bucket, Key=new_key, Body=buffer, ContentType='image/webp')\n```\n\n**Infrastructure needed:**\n- S3 bucket event notification → Lambda trigger on `ObjectCreated`\n- Lambda IAM role with `s3:GetObject` and `s3:PutObject`\n- Lambda layer with Pillow (or use a container image)\n- CloudFront distribution for serving\n\nThis works but adds significant operational complexity. You need to handle Lambda cold starts (first resize can take 3-5s), configure dead-letter queues for failed resizes, and monitor the pipeline. For a small project, this might be more infrastructure than it's worth.",
+      "token_count": 600,
+      "created_at": "2026-05-04T11:35:00Z"
+    },
+
+    {
+      "_session": "Session 4b — Cloudinary Spike (May 4, spike/cloudinary-upload branch, forked from n-19)",
+      "id": "n-24",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-19",
+      "branch_id": "br-cloudinary",
+      "node_type": "message",
+      "role": "user",
+      "content": "Let's try the Cloudinary approach instead. Show me upload with automatic resize transforms.",
+      "token_count": 22,
+      "created_at": "2026-05-04T13:05:00Z"
+    },
+    {
+      "id": "n-25",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-24",
+      "branch_id": "br-cloudinary",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Cloudinary integration — upload, transform, and serve in one flow:\n\n```python\n# app/services/image.py\nimport cloudinary\nimport cloudinary.uploader\n\ncloudinary.config(\n    cloud_name=settings.cloudinary_cloud,\n    api_key=settings.cloudinary_key,\n    api_secret=settings.cloudinary_secret\n)\n\nasync def upload_recipe_image(file: UploadFile, user_id: str) -> dict:\n    result = cloudinary.uploader.upload(\n        file.file,\n        folder=f'recipebox/{user_id}',\n        resource_type='image',\n        allowed_formats=['jpg', 'png', 'webp'],\n        transformation=[\n            {'quality': 'auto', 'fetch_format': 'auto'}\n        ]\n    )\n    return {\n        'public_id': result['public_id'],\n        'url': result['secure_url'],\n        'thumb_url': cloudinary.utils.cloudinary_url(\n            result['public_id'], width=200, height=200, crop='fill'\n        )[0],\n        'medium_url': cloudinary.utils.cloudinary_url(\n            result['public_id'], width=800, height=600, crop='limit'\n        )[0]\n    }\n\n# app/routers/uploads.py\n@router.post('/images')\nasync def upload_image(\n    file: UploadFile,\n    user: User = Depends(get_current_user)\n):\n    if file.content_type not in ('image/jpeg', 'image/png', 'image/webp'):\n        raise HTTPException(400, 'Unsupported image type')\n    return await upload_recipe_image(file, str(user.id))\n```\n\nNo Lambda, no S3 event triggers, no resize pipeline. Cloudinary handles format conversion (auto WebP/AVIF), quality optimization, resizing via URL transforms, and CDN delivery. You just store the `public_id` in your database.",
+      "token_count": 420,
+      "created_at": "2026-05-04T13:10:00Z"
+    },
+    {
+      "id": "n-26",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-25",
+      "branch_id": "br-cloudinary",
+      "node_type": "message",
+      "role": "user",
+      "content": "This is much simpler. Let's finalize it with proper error handling and add an image_url field to the recipes table.",
+      "token_count": 28,
+      "created_at": "2026-05-04T13:30:00Z"
+    },
+    {
+      "id": "n-27",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-26",
+      "branch_id": "br-cloudinary",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Final Cloudinary implementation with error handling and schema update:\n\n```sql\n-- Migration: add image fields to recipes\nALTER TABLE recipes ADD COLUMN image_public_id TEXT;\nALTER TABLE recipes ADD COLUMN image_url TEXT;\n```\n\n```python\n# app/services/image.py (updated with error handling)\nasync def upload_recipe_image(file: UploadFile, user_id: str) -> dict:\n    try:\n        if file.size > 10 * 1024 * 1024:  # 10 MB limit\n            raise ValueError('Image too large (max 10MB)')\n        \n        result = cloudinary.uploader.upload(\n            file.file,\n            folder=f'recipebox/{user_id}',\n            resource_type='image',\n            allowed_formats=['jpg', 'png', 'webp'],\n            max_bytes=10_000_000,\n            transformation=[{'quality': 'auto', 'fetch_format': 'auto'}]\n        )\n        return {\n            'public_id': result['public_id'],\n            'url': result['secure_url'],\n            'thumb_url': cloudinary_url(result['public_id'], width=200, height=200, crop='fill')[0],\n            'medium_url': cloudinary_url(result['public_id'], width=800, height=600, crop='limit')[0]\n        }\n    except cloudinary.exceptions.Error as e:\n        raise HTTPException(502, f'Image service error: {e}')\n\nasync def delete_recipe_image(public_id: str):\n    try:\n        cloudinary.uploader.destroy(public_id)\n    except cloudinary.exceptions.Error:\n        pass  # Log but don't fail — orphaned images are cleaned up by scheduled job\n```\n\nThe recipe create/update endpoints now accept `image_public_id` and store it alongside the computed `image_url`. On recipe deletion, we call `delete_recipe_image` to clean up. Decision: **going with Cloudinary** over S3 — 80% less code, no Lambda pipeline, and the free tier covers our initial scale.",
+      "token_count": 460,
+      "created_at": "2026-05-04T13:35:00Z"
+    },
+
+    {
+      "_session": "Session 5 — Search (May 5, feat/search branch, forked from n-07)",
+      "id": "n-28",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-07",
+      "branch_id": "br-search",
+      "node_type": "message",
+      "role": "user",
+      "content": "Now let's add full-text search for recipes. Users should be able to search by recipe title, ingredient names, and description. I want it to feel fast and relevant.",
+      "token_count": 38,
+      "created_at": "2026-05-05T10:05:00Z"
+    },
+    {
+      "id": "n-29",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-28",
+      "branch_id": "br-search",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "PostgreSQL full-text search across recipe fields:\n\n```sql\n-- Add tsvector column for combined search\nALTER TABLE recipes ADD COLUMN search_tsv tsvector\n    GENERATED ALWAYS AS (\n        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||\n        setweight(to_tsvector('english', coalesce(description, '')), 'B')\n    ) STORED;\n\nCREATE INDEX idx_recipe_search ON recipes USING gin(search_tsv);\n```\n\n```python\n# app/routers/search.py\n@router.get('/search')\nasync def search_recipes(\n    q: str = Query(min_length=2, max_length=200),\n    limit: int = Query(default=20, ge=1, le=50),\n    db: AsyncSession = Depends(get_db)\n):\n    tsquery = func.websearch_to_tsquery('english', q)\n    \n    query = (\n        select(\n            Recipe,\n            func.ts_rank(Recipe.search_tsv, tsquery).label('rank')\n        )\n        .where(Recipe.search_tsv.op('@@')(tsquery))\n        .where(Recipe.is_published == True)\n        .order_by(text('rank DESC'), Recipe.created_at.desc())\n        .limit(limit)\n    )\n    \n    results = (await db.execute(query)).all()\n    return {\n        'results': [\n            {**RecipeResponse.model_validate(recipe).model_dump(), 'relevance': rank}\n            for recipe, rank in results\n        ],\n        'query': q,\n        'count': len(results)\n    }\n```\n\nThe `search_tsv` column is a generated tsvector that combines title (weight A, highest) and description (weight B). The GIN index makes `@@` matching fast even at scale. `websearch_to_tsquery` supports Google-style syntax: `chicken OR beef`, `\"pasta salad\"`, `-spicy`.\n\nTo also search by ingredient name, we'd need a subquery join — but for v1 this title+description search covers the main use case.",
+      "token_count": 550,
+      "created_at": "2026-05-05T10:10:00Z"
+    },
+    {
+      "id": "n-30",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-29",
+      "branch_id": "br-search",
+      "node_type": "message",
+      "role": "user",
+      "content": "Add autocomplete suggestions that appear as the user types. It should be fast and fuzzy — handle typos like 'chiken' matching 'chicken'.",
+      "token_count": 32,
+      "created_at": "2026-05-05T10:30:00Z"
+    },
+    {
+      "id": "n-31",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-30",
+      "branch_id": "br-search",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Trigram-based autocomplete with fuzzy matching:\n\n```sql\n-- Enable the extension\nCREATE EXTENSION IF NOT EXISTS pg_trgm;\n\n-- GIN index on recipe titles for trigram similarity\nCREATE INDEX idx_recipe_title_trgm ON recipes USING gin(title gin_trgm_ops);\n```\n\n```python\n# app/routers/search.py\n@router.get('/autocomplete')\nasync def autocomplete(\n    q: str = Query(min_length=1, max_length=100),\n    limit: int = Query(default=5, ge=1, le=10),\n    db: AsyncSession = Depends(get_db)\n):\n    similarity = func.similarity(Recipe.title, q)\n    \n    query = (\n        select(Recipe.id, Recipe.title, similarity.label('sim'))\n        .where(Recipe.is_published == True)\n        .where(similarity > 0.1)\n        .order_by(similarity.desc())\n        .limit(limit)\n    )\n    \n    results = (await db.execute(query)).all()\n    return {\n        'suggestions': [\n            {'id': str(r.id), 'title': r.title, 'score': round(r.sim, 3)}\n            for r in results\n        ]\n    }\n```\n\n`pg_trgm` breaks strings into 3-character grams and compares overlap. 'chiken' shares most trigrams with 'chicken' (chi, hic, ick, cke, ken) so it gets a high similarity score. The GIN index makes this O(log n) instead of a full table scan. For the frontend, debounce the input by 200ms and call `/autocomplete?q=...` on each keystroke.",
+      "token_count": 480,
+      "created_at": "2026-05-05T10:35:00Z"
+    },
+
+    {
+      "_session": "Session 6 — Integration (May 6, back on main branch)",
+      "id": "n-32",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-07",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "user",
+      "content": "I've been building features on separate branches. Can you compare the auth branch and recipe-crud branch to see how they diverge from main?",
+      "token_count": 32,
+      "created_at": "2026-05-06T14:00:00Z"
+    },
+    {
+      "id": "n-33",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-32",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "Here's the divergence report between feat/auth and feat/recipe-crud:\n\n**Lowest Common Ancestor:** n-07 (the final schema message on main — \"Updated schema with recipe_ingredients and reviews\")\n\n**feat/auth has 6 unique nodes:**\n- n-08: JWT + bcrypt auth request\n- n-09: Auth module implementation\n- n-10: Email verification request\n- n-11: Email verification implementation\n- n-12: Google OAuth request\n- n-13: Google OAuth implementation\n\n**feat/recipe-crud has 4 unique nodes:**\n- n-14: Recipe CRUD request\n- n-15: CRUD endpoints implementation\n- n-16: Pagination request\n- n-17: Cursor pagination implementation\n\n**Conflict analysis:** No schema conflicts. Auth added `is_verified`, `verification_token`, `oauth_provider`, `oauth_provider_id` columns to users. Recipe CRUD didn't touch the users table. Both branches read from the same base schema. Safe to merge sequentially — auth first, then recipe-crud.",
+      "token_count": 300,
+      "created_at": "2026-05-06T14:05:00Z"
+    },
+    {
+      "id": "n-34",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-33",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "user",
+      "content": "Great. Merge them all into main — auth, recipe CRUD, the Cloudinary image upload, and search. Give me the final integrated project overview.",
+      "token_count": 30,
+      "created_at": "2026-05-06T16:00:00Z"
+    },
+    {
+      "id": "n-35",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-34",
+      "branch_id": "br-main",
+      "node_type": "message",
+      "role": "assistant",
+      "content": "All features merged. Here's the final RecipeBox project overview:\n\n**Database (8 tables):**\n- `users` — with password auth, email verification, Google OAuth support\n- `categories` — recipe categories with slugs\n- `recipes` — with image_public_id (Cloudinary), search_tsv (FTS), all metadata\n- `ingredients` — ingredient catalog\n- `recipe_ingredients` — junction with quantity/unit/order\n- `reviews` — 1-5 star ratings with comments\n- Plus: GIN indexes for FTS and trigram autocomplete\n\n**API Endpoints (4 routers, 14 endpoints):**\n- `POST /signup`, `POST /login`, `GET /me`, `GET /login/google`, `GET /callback/google`, `GET /verify`\n- `GET /recipes`, `POST /recipes`, `GET /recipes/{id}`, `PUT /recipes/{id}`, `DELETE /recipes/{id}`\n- `POST /images` (Cloudinary upload)\n- `GET /search?q=`, `GET /autocomplete?q=`\n\n**Architecture decisions made:**\n1. Cloudinary over S3 — simpler pipeline, sufficient for our scale (spike/s3-upload archived)\n2. Cursor-based over offset pagination — stable under concurrent writes\n3. PostgreSQL FTS over Elasticsearch — good enough for v1, no extra infra\n4. JWT with 30min expiry, no refresh tokens yet — add in v2\n\n**What's next for v2:** Refresh tokens, ingredient-level search, recipe collections/bookmarks, social features (following users, activity feed).",
+      "token_count": 650,
+      "created_at": "2026-05-06T16:10:00Z"
+    },
+
+    {
+      "_session": "Summary node — condenses the auth session to save tokens",
+      "id": "n-36",
+      "conversation_id": "conv-recipebox",
+      "parent_id": "n-07",
+      "branch_id": "br-auth",
+      "node_type": "summary",
+      "role": "system",
+      "content": "AUTH MODULE SUMMARY: Built complete authentication for RecipeBox with three flows: (1) Email+password signup/login using bcrypt hashing and JWT access tokens (30min expiry), with /signup, /login, and /me endpoints. (2) Email verification via token-based link — unverified users blocked from creating recipes via require_verified dependency. (3) Google OAuth via authlib — users signing in with Google are auto-verified, accounts are linked by email if they already exist. Schema additions: is_verified, verification_token, token_expires_at, oauth_provider, oauth_provider_id columns on users table.",
+      "token_count": 180,
+      "created_at": "2026-05-06T14:30:00Z"
+    }
+  ],
+
+  "node_ancestry": {
+    "_note": "Representative subset. The closure-table trigger auto-populates all pairs on INSERT. Format: [ancestor_id, descendant_id, depth]",
+    "entries": [
+      ["n-01", "n-01", 0],
+      ["n-02", "n-02", 0],  ["n-01", "n-02", 1],
+      ["n-03", "n-03", 0],  ["n-02", "n-03", 1],  ["n-01", "n-03", 2],
+      ["n-04", "n-04", 0],  ["n-03", "n-04", 1],
+      ["n-05", "n-05", 0],  ["n-04", "n-05", 1],
+      ["n-06", "n-06", 0],  ["n-05", "n-06", 1],
+      ["n-07", "n-07", 0],  ["n-06", "n-07", 1],  ["n-05", "n-07", 2],  ["n-04", "n-07", 3],  ["n-03", "n-07", 4],  ["n-02", "n-07", 5],  ["n-01", "n-07", 6],
+
+      ["n-08", "n-08", 0],  ["n-07", "n-08", 1],
+      ["n-09", "n-09", 0],  ["n-08", "n-09", 1],
+      ["n-10", "n-10", 0],  ["n-09", "n-10", 1],
+      ["n-11", "n-11", 0],  ["n-10", "n-11", 1],
+      ["n-12", "n-12", 0],  ["n-11", "n-12", 1],
+      ["n-13", "n-13", 0],  ["n-12", "n-13", 1],  ["n-11", "n-13", 2],  ["n-10", "n-13", 3],  ["n-09", "n-13", 4],  ["n-08", "n-13", 5],  ["n-07", "n-13", 6],  ["n-06", "n-13", 7],  ["n-05", "n-13", 8],  ["n-04", "n-13", 9],  ["n-03", "n-13", 10],  ["n-02", "n-13", 11],  ["n-01", "n-13", 12],
+
+      ["n-14", "n-14", 0],  ["n-07", "n-14", 1],
+      ["n-15", "n-15", 0],  ["n-14", "n-15", 1],
+      ["n-16", "n-16", 0],  ["n-15", "n-16", 1],
+      ["n-17", "n-17", 0],  ["n-16", "n-17", 1],  ["n-15", "n-17", 2],  ["n-14", "n-17", 3],  ["n-07", "n-17", 4],  ["n-06", "n-17", 5],  ["n-05", "n-17", 6],  ["n-04", "n-17", 7],  ["n-03", "n-17", 8],  ["n-02", "n-17", 9],  ["n-01", "n-17", 10],
+
+      ["n-18", "n-18", 0],  ["n-17", "n-18", 1],
+      ["n-19", "n-19", 0],  ["n-18", "n-19", 1],
+
+      ["n-20", "n-20", 0],  ["n-19", "n-20", 1],
+      ["n-21", "n-21", 0],  ["n-20", "n-21", 1],
+      ["n-22", "n-22", 0],  ["n-21", "n-22", 1],
+      ["n-23", "n-23", 0],  ["n-22", "n-23", 1],  ["n-21", "n-23", 2],  ["n-20", "n-23", 3],  ["n-19", "n-23", 4],  ["n-18", "n-23", 5],  ["n-17", "n-23", 6],
+
+      ["n-24", "n-24", 0],  ["n-19", "n-24", 1],
+      ["n-25", "n-25", 0],  ["n-24", "n-25", 1],
+      ["n-26", "n-26", 0],  ["n-25", "n-26", 1],
+      ["n-27", "n-27", 0],  ["n-26", "n-27", 1],  ["n-25", "n-27", 2],  ["n-24", "n-27", 3],  ["n-19", "n-27", 4],  ["n-18", "n-27", 5],  ["n-17", "n-27", 6],
+
+      ["n-28", "n-28", 0],  ["n-07", "n-28", 1],
+      ["n-29", "n-29", 0],  ["n-28", "n-29", 1],
+      ["n-30", "n-30", 0],  ["n-29", "n-30", 1],
+      ["n-31", "n-31", 0],  ["n-30", "n-31", 1],  ["n-29", "n-31", 2],  ["n-28", "n-31", 3],  ["n-07", "n-31", 4],  ["n-06", "n-31", 5],  ["n-05", "n-31", 6],  ["n-04", "n-31", 7],  ["n-03", "n-31", 8],  ["n-02", "n-31", 9],  ["n-01", "n-31", 10],
+
+      ["n-32", "n-32", 0],  ["n-07", "n-32", 1],
+      ["n-33", "n-33", 0],  ["n-32", "n-33", 1],
+      ["n-34", "n-34", 0],  ["n-33", "n-34", 1],
+      ["n-35", "n-35", 0],  ["n-34", "n-35", 1],  ["n-33", "n-35", 2],  ["n-32", "n-35", 3],  ["n-07", "n-35", 4],  ["n-06", "n-35", 5],  ["n-05", "n-35", 6],  ["n-04", "n-35", 7],  ["n-03", "n-35", 8],  ["n-02", "n-35", 9],  ["n-01", "n-35", 10],
+
+      ["n-36", "n-36", 0],  ["n-07", "n-36", 1]
+    ]
+  },
+
+  "context_pins": [
+    {
+      "_why": "The schema definition is critical context for every feature branch — pinned with high priority so it's always included in context assembly",
+      "id": "pin-01",
+      "branch_id": "br-auth",
+      "node_id": "n-05",
+      "pinned_by": "u-alex",
+      "reason": "Core DB schema — always needed when building features that touch the database",
+      "priority": 10,
+      "created_at": "2026-05-02T09:00:00Z"
+    },
+    {
+      "id": "pin-02",
+      "branch_id": "br-recipe-crud",
+      "node_id": "n-05",
+      "pinned_by": "u-alex",
+      "reason": "Core DB schema — always needed when building features that touch the database",
+      "priority": 10,
+      "created_at": "2026-05-03T10:00:00Z"
+    },
+    {
+      "id": "pin-03",
+      "branch_id": "br-search",
+      "node_id": "n-05",
+      "pinned_by": "u-alex",
+      "reason": "Core DB schema — need to know table structure to build search indexes",
+      "priority": 10,
+      "created_at": "2026-05-05T10:00:00Z"
+    },
+    {
+      "id": "pin-04",
+      "branch_id": "br-image-upload",
+      "node_id": "n-05",
+      "pinned_by": "u-alex",
+      "reason": "Core DB schema — need to know recipes table to add image columns",
+      "priority": 10,
+      "created_at": "2026-05-04T10:00:00Z"
+    },
+    {
+      "_why": "The project scaffold is pinned on main so the integration session always has the directory structure in context",
+      "id": "pin-05",
+      "branch_id": "br-main",
+      "node_id": "n-03",
+      "pinned_by": "u-alex",
+      "reason": "Project directory structure — reference when integrating features",
+      "priority": 5,
+      "created_at": "2026-05-06T14:00:00Z"
+    }
+  ],
+
+  "context_imports": [
+    {
+      "_why": "When building search, Alex imports the schema node to know the table structure and the recipe CRUD node to know the Pydantic models and endpoint patterns",
+      "id": "imp-01",
+      "target_branch_id": "br-search",
+      "source_node_id": "n-15",
+      "include_descendants": false,
+      "imported_by": "u-alex",
+      "imported_at": "2026-05-05T10:02:00Z"
+    },
+    {
+      "_why": "When building Cloudinary integration, Alex imports the S3 spike comparison node to remember why S3 was rejected",
+      "id": "imp-02",
+      "target_branch_id": "br-cloudinary",
+      "source_node_id": "n-19",
+      "include_descendants": false,
+      "imported_by": "u-alex",
+      "imported_at": "2026-05-04T13:02:00Z"
+    },
+    {
+      "_why": "When doing integration on main, Alex imports the Cloudinary decision node to reference the final image upload approach",
+      "id": "imp-03",
+      "target_branch_id": "br-main",
+      "source_node_id": "n-27",
+      "include_descendants": false,
+      "imported_by": "u-alex",
+      "imported_at": "2026-05-06T15:00:00Z"
+    },
+    {
+      "_why": "Alex also imports the full search implementation subtree into main for integration",
+      "id": "imp-04",
+      "target_branch_id": "br-main",
+      "source_node_id": "n-29",
+      "include_descendants": true,
+      "imported_by": "u-alex",
+      "imported_at": "2026-05-06T15:01:00Z"
+    }
+  ],
+
+  "node_summaries": [
+    {
+      "_why": "The auth session (6 nodes, ~1645 tokens) is summarized into a single 180-token node. When context is assembled for the main branch integration, the summary replaces the verbose originals, saving ~1465 tokens.",
+      "summary_node_id": "n-36",
+      "summarized_node_id": "n-08"
+    },
+    { "summary_node_id": "n-36", "summarized_node_id": "n-09" },
+    { "summary_node_id": "n-36", "summarized_node_id": "n-10" },
+    { "summary_node_id": "n-36", "summarized_node_id": "n-11" },
+    { "summary_node_id": "n-36", "summarized_node_id": "n-12" },
+    { "summary_node_id": "n-36", "summarized_node_id": "n-13" }
+  ],
+
+  "tags": [
+    { "id": "t-schema",   "name": "schema-design" },
+    { "id": "t-api",      "name": "api-endpoint" },
+    { "id": "t-decision", "name": "architecture-decision" },
+    { "id": "t-security", "name": "security" }
+  ],
+
+  "node_tags": [
+    { "node_id": "n-05", "tag_id": "t-schema" },
+    { "node_id": "n-07", "tag_id": "t-schema" },
+    { "node_id": "n-09", "tag_id": "t-api" },
+    { "node_id": "n-09", "tag_id": "t-security" },
+    { "node_id": "n-11", "tag_id": "t-security" },
+    { "node_id": "n-13", "tag_id": "t-security" },
+    { "node_id": "n-15", "tag_id": "t-api" },
+    { "node_id": "n-17", "tag_id": "t-api" },
+    { "node_id": "n-19", "tag_id": "t-decision" },
+    { "node_id": "n-27", "tag_id": "t-decision" },
+    { "node_id": "n-29", "tag_id": "t-api" }
+  ],
+
+  "branch_shares": [
+    {
+      "_why": "Alex shares the S3 spike branch with teammate Jamie for review before deciding to go with Cloudinary instead",
+      "id": "share-01",
+      "branch_id": "br-s3-approach",
+      "shared_with": "u-jamie",
+      "permission": "comment",
+      "created_at": "2026-05-04T12:00:00Z"
+    },
+    {
+      "_why": "The main branch is shared publicly for the whole team to view the integrated result",
+      "id": "share-02",
+      "branch_id": "br-main",
+      "shared_with": null,
+      "permission": "view",
+      "created_at": "2026-05-06T17:00:00Z"
+    }
+  ]
+}
