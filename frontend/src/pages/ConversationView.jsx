@@ -24,6 +24,9 @@ export default function ConversationView() {
   const [pinPriority, setPinPriority] = useState(5);
   const [pinReason, setPinReason] = useState("");
   const [selectedGraphNode, setSelectedGraphNode] = useState(null);
+  const [makingBranch, setMakingBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [branchCreateError, setBranchCreateError] = useState("");
 
   // Load conversation + branches
   useEffect(() => {
@@ -169,6 +172,39 @@ export default function ConversationView() {
 
   const handleGraphNodeSelect = (nodeData) => {
     setSelectedGraphNode(nodeData);
+    setMakingBranch(false);
+    setNewBranchName("");
+    setBranchCreateError("");
+  };
+
+  const handleCreateBranchFromNode = async () => {
+    if (!newBranchName.trim() || !selectedGraphNode) return;
+    setBranchCreateError("");
+    try {
+      const br = await api.createBranch(id, {
+        name: newBranchName.trim(),
+        fork_node_id: selectedGraphNode.id,
+        created_by: DEFAULT_USER_ID,
+      });
+      if (br?.detail) {
+        if (String(br.detail).toLowerCase().includes("already")) {
+          setBranchCreateError("Branch name already exists.");
+        } else {
+          setBranchCreateError("Failed to create branch.");
+        }
+        return;
+      }
+      // SSE branch_updated will add to branches, but pre-emptively select the new one
+      setSelected(br);
+      setBranches((prev) => {
+        const exists = prev.some((b) => b.id === br.id);
+        return exists ? prev : [...prev, br];
+      });
+      setMakingBranch(false);
+      setNewBranchName("");
+    } catch (err) {
+      setBranchCreateError("Failed to create branch.");
+    }
   };
 
   if (!conv) {
@@ -339,6 +375,49 @@ export default function ConversationView() {
                       </svg>
                       Import to another branch
                     </button>
+                    {/* Branch creation */}
+                    <div className="mt-1 pt-1 border-t border-[var(--color-border)]">
+                      {!makingBranch ? (
+                        <button
+                          onClick={() => { setMakingBranch(true); setBranchCreateError(""); }}
+                          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-blue)] hover:text-[var(--color-blue)] hover:bg-[var(--color-blue-dim)] transition-colors text-left"
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Create branch here
+                        </button>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <input
+                            value={newBranchName}
+                            onChange={(e) => setNewBranchName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCreateBranchFromNode()}
+                            placeholder="Branch name…"
+                            autoFocus
+                            className="w-full px-2 py-1.5 text-xs rounded border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-blue)]"
+                          />
+                          {branchCreateError && (
+                            <p className="text-[10px] text-[var(--color-red)]">{branchCreateError}</p>
+                          )}
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={handleCreateBranchFromNode}
+                              disabled={!newBranchName.trim()}
+                              className="flex-1 px-2 py-1 text-xs rounded bg-[var(--color-blue)] text-white font-medium disabled:opacity-40"
+                            >
+                              Create
+                            </button>
+                            <button
+                              onClick={() => { setMakingBranch(false); setNewBranchName(""); setBranchCreateError(""); }}
+                              className="px-2 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-text-dim)]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
