@@ -32,6 +32,10 @@ const branchPalette = [
 
 const roleIcons = { user: "U", assistant: "A", system: "S", summary: "\u03A3" };
 
+// Amber for pins, violet for imports
+const PIN_COLOR = "#d97706";
+const IMPORT_COLOR = "#7c3aed";
+
 function getColorForBranch(branchId, branchList) {
   const idx = branchList.findIndex((b) => b.id === branchId);
   return branchPalette[idx >= 0 ? idx % branchPalette.length : 0];
@@ -41,7 +45,8 @@ function buildTreeLayout(rawNodes, edges) {
   const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "TB", nodesep: 24, ranksep: 55, marginx: 20, marginy: 20 });
   rawNodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
-  edges.forEach((e) => g.setEdge(e.source, e.target));
+  // Only feed tree edges (parent→child) to dagre — not import edges
+  edges.filter((e) => e._treeEdge).forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return rawNodes.map((n) => {
     const pos = g.node(n.id);
@@ -53,6 +58,8 @@ function GraphNode({ data, selected }) {
   const c = data._colors;
   const icon = roleIcons[data.role] || roleIcons[data.node_type] || "?";
   const isHead = data._isHead;
+  const isPinned = data._isPinned;
+  const isImportSource = data._isImportSource;
 
   return (
     <>
@@ -60,11 +67,21 @@ function GraphNode({ data, selected }) {
 
       <NodeToolbar isVisible={data._hovered} position={Position.Right} offset={10}>
         <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 max-w-[280px] text-left pointer-events-none">
-          <div className="flex items-center gap-1.5 mb-1.5">
+          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white" style={{ background: c.main }}>
               {data.role || data.node_type}
             </span>
             <span className="text-[9px] font-mono text-gray-400">{data._branchName}</span>
+            {isPinned && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: PIN_COLOR }}>
+                📌 pinned on {data._pinnedOnBranches?.join(", ")}
+              </span>
+            )}
+            {isImportSource && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: IMPORT_COLOR }}>
+                ↗ imported by {data._importedByBranches?.join(", ")}
+              </span>
+            )}
           </div>
           <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">
             {data.content?.slice(0, 280)}{data.content?.length > 280 ? "..." : ""}
@@ -81,10 +98,12 @@ function GraphNode({ data, selected }) {
         style={{
           width: NODE_W,
           background: selected ? c.light : "white",
-          borderColor: selected ? c.main : `${c.main}25`,
+          borderColor: selected ? c.main : isPinned ? PIN_COLOR : `${c.main}25`,
           boxShadow: selected
             ? `0 0 0 3px ${c.ring}`
             : isHead ? `0 2px 8px ${c.main}20` : "0 1px 3px rgba(0,0,0,0.04)",
+          outline: isImportSource ? `2px dashed ${IMPORT_COLOR}40` : undefined,
+          outlineOffset: "2px",
         }}
       >
         <div className="flex items-center gap-1.5">
@@ -96,6 +115,12 @@ function GraphNode({ data, selected }) {
               <span className="text-[9px] font-semibold text-gray-700 truncate">{data._label}</span>
               {isHead && (
                 <span className="text-[7px] font-bold uppercase px-0.5 rounded text-white shrink-0" style={{ background: c.main }}>HD</span>
+              )}
+              {isPinned && (
+                <span className="text-[8px] shrink-0" title={`Pinned on: ${data._pinnedOnBranches?.join(", ")}`}>📌</span>
+              )}
+              {isImportSource && (
+                <span className="text-[8px] shrink-0" title={`Imported by: ${data._importedByBranches?.join(", ")}`}>↗</span>
               )}
             </div>
             <span className="text-[8px] text-gray-400 font-mono">{data._branchName}</span>
@@ -110,7 +135,7 @@ function GraphNode({ data, selected }) {
 
 const nodeTypes = { graphNode: GraphNode };
 
-export default function ConversationGraph({ allNodes, branches, onNodeSelect, selectedNodeId }) {
+export default function ConversationGraph({ allNodes, branches, pins = [], imports = [], onNodeSelect, selectedNodeId }) {
   const [hoveredNode, setHoveredNode] = useState(null);
 
   const branchMap = useMemo(() => {
@@ -123,6 +148,28 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
     () => new Set(branches.map((b) => b.head_node_id).filter(Boolean)),
     [branches]
   );
+
+  // node_id → array of branch names that pinned it
+  const pinnedNodeMap = useMemo(() => {
+    const m = new Map();
+    pins.forEach((p) => {
+      const brName = branchMap.get(p.branch_id)?.name || p.branch_id?.slice(0, 6);
+      if (!m.has(p.node_id)) m.set(p.node_id, []);
+      m.get(p.node_id).push(brName);
+    });
+    return m;
+  }, [pins, branchMap]);
+
+  // source_node_id → array of branch names that imported it
+  const importSourceMap = useMemo(() => {
+    const m = new Map();
+    imports.forEach((imp) => {
+      const brName = branchMap.get(imp.target_branch_id)?.name || imp.target_branch_id?.slice(0, 6);
+      if (!m.has(imp.source_node_id)) m.set(imp.source_node_id, []);
+      m.get(imp.source_node_id).push(brName);
+    });
+    return m;
+  }, [imports, branchMap]);
 
   const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
     if (!allNodes?.length) return { nodes: [], edges: [] };
@@ -141,6 +188,8 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
       const branchName = br?.name || "?";
       const colors = getColorForBranch(n.branch_id, branches);
       const isHead = headNodeIds.has(n.id);
+      const pinnedOnBranches = pinnedNodeMap.get(n.id);
+      const importedByBranches = importSourceMap.get(n.id);
 
       const words = (n.content || "").split(/\s+/).slice(0, 5).join(" ");
       const label = words.length > 28 ? words.slice(0, 28) + "..." : words;
@@ -155,12 +204,16 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
           _isHead: isHead,
           _label: label,
           _hovered: false,
+          _isPinned: !!pinnedOnBranches,
+          _pinnedOnBranches: pinnedOnBranches || [],
+          _isImportSource: !!importedByBranches,
+          _importedByBranches: importedByBranches || [],
         },
         position: { x: 0, y: 0 },
       });
     });
 
-    // PASS 3: Build edges (now ALL nodes exist in the map)
+    // PASS 3: Build tree edges (parent → child)
     const edges = [];
     nodeDataMap.forEach((n) => {
       if (!n.parent_id) return;
@@ -176,6 +229,7 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
         target: n.id,
         type: "smoothstep",
         animated: isFork,
+        _treeEdge: true,
         style: {
           stroke: colors.main,
           strokeWidth: isFork ? 1.5 : 2,
@@ -191,12 +245,44 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
       });
     });
 
+    // PASS 4: Build import edges (source_node → importing branch head)
+    imports.forEach((imp) => {
+      const targetBranch = branchMap.get(imp.target_branch_id);
+      const targetHead = targetBranch?.head_node_id;
+      if (!targetHead || !nodeDataMap.has(imp.source_node_id) || !nodeDataMap.has(targetHead)) return;
+      if (imp.source_node_id === targetHead) return;
+
+      edges.push({
+        id: `import-${imp.id}`,
+        source: imp.source_node_id,
+        target: targetHead,
+        type: "smoothstep",
+        animated: true,
+        _treeEdge: false,
+        label: "imported",
+        labelStyle: { fontSize: 8, fill: IMPORT_COLOR },
+        labelBgStyle: { fill: "white", fillOpacity: 0.85 },
+        style: {
+          stroke: IMPORT_COLOR,
+          strokeWidth: 1.5,
+          strokeDasharray: "4 3",
+          opacity: 0.6,
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 7,
+          height: 7,
+          color: IMPORT_COLOR,
+        },
+      });
+    });
+
     const laidOut = buildTreeLayout(flowNodeList, edges);
     return { nodes: laidOut, edges };
-  }, [allNodes, branchMap, branches, headNodeIds]);
+  }, [allNodes, branchMap, branches, headNodeIds, pinnedNodeMap, importSourceMap, imports]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
-  const [edges, , onEdgesChange] = useEdgesState(flowEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
   useEffect(() => {
     setNodes(
@@ -207,6 +293,10 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
       }))
     );
   }, [flowNodes, selectedNodeId, hoveredNode, setNodes]);
+
+  useEffect(() => {
+    setEdges(flowEdges);
+  }, [flowEdges, setEdges]);
 
   const handleNodeClick = useCallback((_, node) => onNodeSelect?.(node.data), [onNodeSelect]);
   const handleMouseEnter = useCallback((_, node) => setHoveredNode(node.id), []);
@@ -240,6 +330,8 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
           className="!bg-white/90 !border-[var(--color-border)] !shadow-sm !rounded-lg"
           style={{ width: 140, height: 90 }} />
       </ReactFlow>
+
+      {/* Legend */}
       <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 flex flex-wrap gap-x-3 gap-y-1 max-w-xs">
         {branches.map((b) => {
           const c = getColorForBranch(b.id, branches);
@@ -250,6 +342,18 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
             </div>
           );
         })}
+        {pins.length > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-[9px]">📌</span>
+            <span className="text-[9px] text-gray-500">pinned</span>
+          </div>
+        )}
+        {imports.length > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] font-bold" style={{ color: IMPORT_COLOR }}>↗</span>
+            <span className="text-[9px] text-gray-500">imported</span>
+          </div>
+        )}
       </div>
     </div>
   );

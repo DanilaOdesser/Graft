@@ -45,14 +45,26 @@ export default function ConversationView() {
 
   useEffect(() => { refreshContext(); }, [refreshContext]);
 
-  // Fetch ALL nodes for the conversation (for graph view — needs parent_id + branch_id)
+  const [allPins, setAllPins] = useState([]);
+  const [allImports, setAllImports] = useState([]);
+
+  // Fetch ALL nodes + pins + imports for the graph view
   const refreshAllNodes = useCallback(() => {
     api.getConversationNodes(id)
       .then((data) => setAllNodes(Array.isArray(data) ? data : []))
       .catch(() => setAllNodes([]));
   }, [id]);
 
+  const refreshPinsAndImports = useCallback(() => {
+    if (!branches.length) return;
+    Promise.all(branches.map((b) => api.getPins(b.id).catch(() => [])))
+      .then((results) => setAllPins(results.flat()));
+    Promise.all(branches.map((b) => api.getImports(b.id).catch(() => [])))
+      .then((results) => setAllImports(results.flat()));
+  }, [branches]);
+
   useEffect(() => { refreshAllNodes(); }, [refreshAllNodes]);
+  useEffect(() => { refreshPinsAndImports(); }, [refreshPinsAndImports]);
 
   // Imports
   const refreshImports = useCallback(() => {
@@ -138,7 +150,7 @@ export default function ConversationView() {
             {["thread", "graph"].map((t) => (
               <button
                 key={t}
-                onClick={() => { setTab(t); setSelectedGraphNode(null); if (t === "graph") refreshAllNodes(); }}
+                onClick={() => { setTab(t); setSelectedGraphNode(null); if (t === "graph") { refreshAllNodes(); refreshPinsAndImports(); } }}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   tab === t
                     ? "bg-[var(--color-blue-dim)] text-[var(--color-blue)]"
@@ -194,6 +206,8 @@ export default function ConversationView() {
               <ConversationGraph
                 allNodes={allNodes}
                 branches={branches}
+                pins={allPins}
+                imports={allImports}
                 onNodeSelect={handleGraphNodeSelect}
                 selectedNodeId={selectedGraphNode?.id}
               />
