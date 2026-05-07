@@ -66,6 +66,59 @@ export default function ConversationView() {
   useEffect(() => { refreshAllNodes(); }, [refreshAllNodes]);
   useEffect(() => { refreshPinsAndImports(); }, [refreshPinsAndImports]);
 
+  // SSE live updates
+  useEffect(() => {
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+    const es = new EventSource(`${API_URL}/conversations/${id}/stream`);
+
+    es.addEventListener("node_created", (e) => {
+      const { node } = JSON.parse(e.data);
+      setAllNodes((prev) => prev.some((n) => n.id === node.id) ? prev : [...prev, node]);
+    });
+
+    es.addEventListener("branch_updated", (e) => {
+      const { branch } = JSON.parse(e.data);
+      setBranches((prev) => {
+        const exists = prev.some((b) => b.id === branch.id);
+        return exists
+          ? prev.map((b) => (b.id === branch.id ? branch : b))
+          : [...prev, branch];
+      });
+      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
+    });
+
+    es.addEventListener("pin_created", (e) => {
+      const { pin } = JSON.parse(e.data);
+      setAllPins((prev) => prev.some((p) => p.id === pin.id) ? prev : [...prev, pin]);
+    });
+
+    es.addEventListener("pin_deleted", (e) => {
+      const { pin_id } = JSON.parse(e.data);
+      setAllPins((prev) => prev.filter((p) => p.id !== pin_id));
+    });
+
+    es.addEventListener("import_created", (e) => {
+      const { import: imp } = JSON.parse(e.data);
+      setAllImports((prev) => prev.some((i) => i.id === imp.id) ? prev : [...prev, imp]);
+    });
+
+    es.addEventListener("import_deleted", (e) => {
+      const { import_id } = JSON.parse(e.data);
+      setAllImports((prev) => prev.filter((i) => i.id !== import_id));
+    });
+
+    es.addEventListener("commit_created", (e) => {
+      const { node, branch } = JSON.parse(e.data);
+      setAllNodes((prev) => prev.some((n) => n.id === node.id) ? prev : [...prev, node]);
+      setBranches((prev) => prev.map((b) => (b.id === branch.id ? branch : b)));
+      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
+    });
+
+    es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
+
+    return () => es.close();
+  }, [id]);
+
   // Imports
   const refreshImports = useCallback(() => {
     if (!selected?.id) return;
@@ -88,12 +141,7 @@ export default function ConversationView() {
   };
 
   const handleTurnComplete = () => {
-    if (selected) {
-      api.getBranch(selected.id).then((br) => {
-        setSelected(br);
-        setBranches((prev) => prev.map((b) => b.id === br.id ? br : b));
-      });
-    }
+    refreshContext();   // still needed for thread view; SSE handles branch/node state
   };
 
   const handlePin = async () => {
