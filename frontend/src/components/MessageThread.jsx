@@ -1,4 +1,30 @@
+import { useEffect, useMemo, useRef } from "react";
+
+// Pins and imports are reference context, rendered at the top. The actual
+// chat flow (ancestors) sits below in chronological order so the newest
+// message lands at the very bottom — matching standard chat UX.
+const SOURCE_ORDER = { pinned: 0, imported: 1, ancestor: 2 };
+
+function orderForThread(nodes) {
+  return [...nodes].sort((a, b) => {
+    const sa = SOURCE_ORDER[a.source] ?? 9;
+    const sb = SOURCE_ORDER[b.source] ?? 9;
+    if (sa !== sb) return sa - sb;
+    if (a.source === "ancestor" && b.source === "ancestor") {
+      return (b.depth ?? 0) - (a.depth ?? 0);
+    }
+    return 0;
+  });
+}
+
 export default function MessageThread({ nodes, onPin, onImport }) {
+  const ordered = useMemo(() => orderForThread(nodes ?? []), [nodes]);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [ordered]);
+
   const roleBadge = (role) => ({
     user: "bg-blue-50 text-blue-700",
     assistant: "bg-emerald-50 text-emerald-700",
@@ -12,7 +38,7 @@ export default function MessageThread({ nodes, onPin, onImport }) {
     imported: "bg-violet-50 text-violet-600",
   }[src] || "bg-gray-100 text-gray-500");
 
-  if (!nodes?.length) return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">Select a branch to see messages</div>;
+  if (!ordered.length) return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">Select a branch to see messages</div>;
 
   const reversed = [...nodes].reverse();
 
@@ -32,6 +58,7 @@ export default function MessageThread({ nodes, onPin, onImport }) {
           </div>
         </div>
       ))}
+      <div ref={bottomRef} />
     </div>
   );
 }
