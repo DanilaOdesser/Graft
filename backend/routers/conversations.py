@@ -141,8 +141,11 @@ def get_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/conversations/{conv_id}/stream")
-async def stream_conversation(conv_id: uuid.UUID):
+async def stream_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
     """SSE stream for live graph updates in this conversation."""
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     q = await subscribe(str(conv_id))
     return StreamingResponse(
         event_generator(str(conv_id), q),

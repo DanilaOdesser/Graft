@@ -24,6 +24,8 @@ def unsubscribe(conv_id: str, q: asyncio.Queue) -> None:
     ch = _channels.get(conv_id, [])
     if q in ch:
         ch.remove(q)
+    if not ch:
+        _channels.pop(conv_id, None)
 
 
 async def publish(conv_id: str, event_type: str, payload: dict) -> None:

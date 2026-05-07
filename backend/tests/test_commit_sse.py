@@ -1,9 +1,8 @@
-import asyncio
 import pytest
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from sse import subscribe, publish, unsubscribe, _channels
+from sse import subscribe, publish, unsubscribe
 
 @pytest.mark.asyncio
 async def test_publish_delivers_to_subscriber():
