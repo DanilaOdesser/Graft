@@ -84,10 +84,9 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         {
             "id": str(r["id"]),
             "source": r["source"],
+            "depth": r["depth"],
             "content": r["content"],
             "token_count": r["token_count"],
-            # We need role for the LLM call; fetch from nodes table inside Query 1's
-            # SELECT would be cleaner, but Query 1 is fixed. Look it up in-memory:
         }
         for r in rows
     ]
@@ -103,8 +102,22 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         for n in context_nodes:
             n["role"] = roles.get(n["id"])
 
-    # 3. LLM call
-    reply_text = call_llm(context_nodes)
+    # 3. Build the LLM messages list. Query 1 returns rows in *rank* order
+    # (pins, then ancestors newest-first, then imports), but Anthropic needs
+    # a chronological alternating user/assistant sequence ending in user.
+    # Pins and imports may live on other branches and would break alternation,
+    # so we send only ancestors (deduped, sorted oldest -> newest).
+    seen_ids: set[str] = set()
+    llm_context: list[dict] = []
+    for n in sorted(
+        (n for n in context_nodes if n["source"] == "ancestor"),
+        key=lambda n: -n["depth"],
+    ):
+        if n["id"] in seen_ids:
+            continue
+        seen_ids.add(n["id"])
+        llm_context.append(n)
+    reply_text = call_llm(llm_context)
 
     # 4. assistant node
     assistant_node = Node(
