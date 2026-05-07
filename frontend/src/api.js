@@ -35,6 +35,8 @@ export const api = {
     request("/nodes", { method: "POST", body: JSON.stringify(data) }),
   getNode: (id) =>
     request(`/nodes/${id}`),
+  getConversationNodes: (convId) =>
+    request(`/conversations/${convId}/nodes`),
   search: (q, userId, k = 20) =>
     request(`/search?q=${encodeURIComponent(q)}&user_id=${userId}&k=${k}`),
   getDivergence: (branchA, branchB) =>

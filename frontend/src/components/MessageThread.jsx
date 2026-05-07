@@ -1,74 +1,32 @@
-import { useEffect, useMemo, useRef } from "react";
+export default function MessageThread({ nodes, onPin, onImport }) {
+  const roleBadge = (role) => ({
+    user: "bg-blue-50 text-blue-700",
+    assistant: "bg-emerald-50 text-emerald-700",
+    system: "bg-amber-50 text-amber-700",
+    summary: "bg-violet-50 text-violet-700",
+  }[role] || "bg-gray-100 text-gray-600");
 
-const ROLE_STYLES = {
-  system: "bg-gray-100 italic text-gray-600",
-  user: "bg-blue-50 border-l-4 border-blue-400",
-  assistant: "bg-white border-l-4 border-emerald-400",
-  summary: "bg-amber-50 border-l-4 border-amber-400",
-};
+  const sourceBadge = (src) => ({
+    ancestor: "bg-gray-100 text-gray-500",
+    pinned: "bg-amber-50 text-amber-600",
+    imported: "bg-violet-50 text-violet-600",
+  }[src] || "bg-gray-100 text-gray-500");
 
-const SOURCE_BADGE = {
-  ancestor: "bg-gray-200 text-gray-700",
-  pinned: "bg-amber-200 text-amber-800",
-  imported: "bg-purple-200 text-purple-800",
-};
+  if (!nodes?.length) return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">Select a branch to see messages</div>;
 
-// Pins and imports are reference context, rendered at the top. The actual
-// chat flow (ancestors) sits below in chronological order so the newest
-// message lands at the very bottom — matching standard chat UX.
-const SOURCE_ORDER = { pinned: 0, imported: 1, ancestor: 2 };
-
-function orderForThread(nodes) {
-  return [...nodes].sort((a, b) => {
-    const sa = SOURCE_ORDER[a.source] ?? 9;
-    const sb = SOURCE_ORDER[b.source] ?? 9;
-    if (sa !== sb) return sa - sb;
-    if (a.source === "ancestor" && b.source === "ancestor") {
-      return (b.depth ?? 0) - (a.depth ?? 0);
-    }
-    return 0;
-  });
-}
-
-export default function MessageThread({ nodes = [], loading }) {
-  const ordered = useMemo(() => orderForThread(nodes), [nodes]);
-  const bottomRef = useRef(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [ordered]);
-
-  if (loading) {
-    return <div className="p-6 text-gray-500">Loading context…</div>;
-  }
-  if (!ordered.length) {
-    return (
-      <div className="p-6 text-gray-500">
-        No messages yet. Send one below to start the conversation.
-      </div>
-    );
-  }
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-3">
-      {ordered.map((n) => (
-        <div
-          key={n.id}
-          className={`rounded p-3 ${ROLE_STYLES[n.role || ""] || "bg-white border"}`}
-        >
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>{n.role || "—"}</span>
-            <span>{n.token_count} tok</span>
+    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 stagger">
+      {nodes.map((n, i) => (
+        <div key={n.id || i} className="group rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 hover:border-[var(--color-border-bright)] transition-colors">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${roleBadge(n.role || n.node_type)}`}>{n.role || n.node_type}</span>
+            {n.source && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceBadge(n.source)}`}>{n.source}</span>}
+            <span className="ml-auto text-[10px] font-[family-name:var(--font-mono)] text-[var(--color-text-faint)]">{n.token_count}tok</span>
           </div>
-          <p className="mt-1 whitespace-pre-wrap">{n.content}</p>
-          <div className="mt-2 flex gap-1 items-center">
-            <span
-              className={`text-xs px-2 py-0.5 rounded ${
-                SOURCE_BADGE[n.source] || "bg-gray-200"
-              }`}
-            >
-              {n.source}
-            </span>
-            {/* DEV-B: action buttons -- pin, import */}
+          <p className="text-sm text-[var(--color-text-dim)] leading-relaxed whitespace-pre-wrap">{n.content}</p>
+          <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onPin && <button onClick={() => onPin(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-amber)] px-2 py-0.5 rounded hover:bg-[var(--color-amber-dim)] transition-colors">Pin</button>}
+            {onImport && <button onClick={() => onImport(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-emerald)] px-2 py-0.5 rounded hover:bg-[var(--color-emerald-dim)] transition-colors">Import to...</button>}
           </div>
         </div>
       ))}

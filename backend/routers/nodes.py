@@ -57,6 +57,31 @@ def create_node(body: NodeCreate, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/conversations/{conv_id}/nodes")
+def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Return ALL nodes for a conversation with full parent/branch data (for graph view)."""
+    nodes = (
+        db.query(Node)
+        .filter(Node.conversation_id == conv_id)
+        .order_by(Node.created_at)
+        .all()
+    )
+    return [
+        {
+            "id": str(n.id),
+            "conversation_id": str(n.conversation_id),
+            "parent_id": str(n.parent_id) if n.parent_id else None,
+            "branch_id": str(n.branch_id),
+            "node_type": n.node_type,
+            "role": n.role,
+            "content": n.content,
+            "token_count": n.token_count,
+            "created_at": str(n.created_at),
+        }
+        for n in nodes
+    ]
+
+
 @router.get("/nodes/{node_id}")
 def get_node(node_id: uuid.UUID, db: Session = Depends(get_db)):
     node = db.query(Node).filter(Node.id == node_id).first()
