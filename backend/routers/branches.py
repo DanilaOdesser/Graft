@@ -14,7 +14,6 @@ from db import get_db
 from models.context import NodeSummary
 from models.core import Branch, Node
 from schemas import BranchCreate
-from llm import summarize_nodes
 from sse import publish
 
 router = APIRouter()
@@ -194,14 +193,14 @@ async def commit_branch(
     if not uncommitted:
         raise HTTPException(status_code=400, detail="Nothing to commit")
 
-    # Build ordered context for LLM (oldest first, user/assistant only)
-    context = [
-        {"role": n.role or n.node_type, "content": n.content}
+    # Build content: commit message (first line = graph label) + raw turn transcript.
+    # Messages are accumulated oldest-first; user/assistant only.
+    messages_text = "\n\n".join(
+        f"{(n.role or 'unknown').capitalize()}: {n.content}"
         for n in reversed(uncommitted)
         if n.role in ("user", "assistant")
-    ]
-    llm_summary = summarize_nodes(context)
-    content = f"{body.commit_message}\n\n{llm_summary}"
+    )
+    content = f"{body.commit_message}\n\n{messages_text}" if messages_text else body.commit_message
 
     summary_node = Node(
         id=uuid.uuid4(),
@@ -248,7 +247,7 @@ async def commit_branch(
         "summarized_node_ids": [str(n.id) for n in uncommitted],
     })
 
-    return {"node": node_dict, "commit_message": body.commit_message, "llm_summary": llm_summary}
+    return {"node": node_dict, "commit_message": body.commit_message}
 
 
 @router.get("/nodes/{node_id}/context")

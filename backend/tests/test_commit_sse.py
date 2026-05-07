@@ -73,7 +73,6 @@ def test_commit_creates_summary_node(client):
     assert body["node"]["node_type"] == "summary"
     assert body["node"]["role"] == "summary"
     assert body["commit_message"] == "First math question"
-    assert "llm_summary" in body
     # Branch head should now point to the summary node
     branch = client.get(f"/api/branches/{branch_id}").json()
     assert branch["head_node_id"] == body["node"]["id"]

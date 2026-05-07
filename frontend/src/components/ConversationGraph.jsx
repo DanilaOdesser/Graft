@@ -60,7 +60,6 @@ function GraphNode({ data, selected }) {
   const c = data._colors;
   const icon = roleIcons[data.role] || roleIcons[data.node_type] || "?";
   const isHead = data._isHead;
-  const isSummary = data.node_type === "summary";
   const isPinned = data._isPinned;
   const isImportSource = data._isImportSource;
 
@@ -104,8 +103,6 @@ function GraphNode({ data, selected }) {
           borderColor: selected ? c.main : isPinned ? PIN_COLOR : `${c.main}25`,
           boxShadow: selected
             ? `0 0 0 3px ${c.ring}`
-            : isSummary
-            ? `0 0 0 2px ${c.main}50, 0 0 0 5px ${c.ring}`
             : isHead
             ? `0 2px 8px ${c.main}20`
             : "0 1px 3px rgba(0,0,0,0.04)",
@@ -243,16 +240,36 @@ export default function ConversationGraph({
   const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
     if (!allNodes?.length) return { nodes: [], edges: [] };
 
-    // PASS 1: Build ALL nodes first (keyed by id)
+    // PASS 1: Index ALL nodes by id (including uncommitted messages — needed for edge walking)
     const nodeDataMap = new Map();
     allNodes.forEach((n) => {
       if (nodeDataMap.has(n.id)) return;
       nodeDataMap.set(n.id, n);
     });
 
-    // PASS 2: Build flow nodes
+    // The graph is a commit graph: only summary nodes and the root system node are visible.
+    // Uncommitted messages live in the thread view and don't appear here.
+    const isVisible = (n) => n.node_type === "summary" || !n.parent_id;
+    const visibleIds = new Set();
+    nodeDataMap.forEach((n) => { if (isVisible(n)) visibleIds.add(n.id); });
+
+    // Walk up parent chain to find the nearest visible ancestor of a given node.
+    const findVisibleAncestor = (startId) => {
+      let cur = nodeDataMap.get(startId);
+      while (cur?.parent_id) {
+        const parent = nodeDataMap.get(cur.parent_id);
+        if (!parent) break;
+        if (visibleIds.has(parent.id)) return parent;
+        cur = parent;
+      }
+      return null;
+    };
+
+    // PASS 2: Build flow nodes for visible nodes only
     const flowNodeList = [];
     nodeDataMap.forEach((n) => {
+      if (!isVisible(n)) return;
+
       const br = branchMap.get(n.branch_id);
       const branchName = br?.name || "?";
       const colors = getColorForBranch(n.branch_id, branches);
@@ -260,8 +277,8 @@ export default function ConversationGraph({
       const pinnedOnBranches = pinnedNodeMap.get(n.id);
       const importedByBranches = importSourceMap.get(n.id);
 
-      const isSummaryNode = n.node_type === "summary";
-      const rawLabel = isSummaryNode
+      // Summary nodes: use commit message (first line). Root: use first words.
+      const rawLabel = n.node_type === "summary"
         ? (n.content || "").split("\n")[0]
         : (n.content || "").split(/\s+/).slice(0, 5).join(" ");
       const label = rawLabel.length > 32 ? rawLabel.slice(0, 32) + "\u2026" : rawLabel;
@@ -285,19 +302,24 @@ export default function ConversationGraph({
       });
     });
 
-    // PASS 3: Build tree edges (parent → child)
+    // PASS 3: Build tree edges between visible nodes.
+    // A commit node's parent_id points to the last message node before it, not the
+    // previous commit. Walk up the parent chain to find the nearest visible ancestor.
     const edges = [];
     nodeDataMap.forEach((n) => {
-      if (!n.parent_id) return;
-      if (!nodeDataMap.has(n.parent_id)) return;
+      if (!isVisible(n) || !n.parent_id) return;
 
-      const parent = nodeDataMap.get(n.parent_id);
-      const isFork = parent.branch_id !== n.branch_id;
+      const visibleParent = visibleIds.has(n.parent_id)
+        ? nodeDataMap.get(n.parent_id)
+        : findVisibleAncestor(n.id);
+      if (!visibleParent) return;
+
+      const isFork = visibleParent.branch_id !== n.branch_id;
       const colors = getColorForBranch(n.branch_id, branches);
 
       edges.push({
-        id: `e-${n.parent_id}-${n.id}`,
-        source: n.parent_id,
+        id: `e-${visibleParent.id}-${n.id}`,
+        source: visibleParent.id,
         target: n.id,
         type: "smoothstep",
         animated: isFork,
@@ -317,11 +339,11 @@ export default function ConversationGraph({
       });
     });
 
-    // PASS 4: Build import edges (source_node → importing branch head)
+    // PASS 4: Build import edges (source_node → importing branch HEAD, both must be visible)
     imports.forEach((imp) => {
       const targetBranch = branchMap.get(imp.target_branch_id);
       const targetHead = targetBranch?.head_node_id;
-      if (!targetHead || !nodeDataMap.has(imp.source_node_id) || !nodeDataMap.has(targetHead)) return;
+      if (!targetHead || !visibleIds.has(imp.source_node_id) || !visibleIds.has(targetHead)) return;
       if (imp.source_node_id === targetHead) return;
 
       edges.push({
