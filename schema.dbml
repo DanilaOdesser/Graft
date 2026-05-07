@@ -38,7 +38,9 @@ Table nodes {
   role varchar(20)                   // 'user' | 'assistant' | 'system' | null for commits
   content text [not null]
   token_count int [not null, default: 0]
-  embedding "vector(1536)"           // pgvector; nullable until embedded
+  // Generated column in DDL:
+  //   tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+  content_tsv tsvector
   created_at timestamptz [not null, default: `now()`]
 
   Indexes {
@@ -46,7 +48,7 @@ Table nodes {
     parent_id
     branch_id
     (conversation_id, created_at) [name: 'idx_nodes_conv_recent']
-    embedding [type: hnsw, name: 'idx_nodes_embedding_hnsw']
+    content_tsv [type: gin, name: 'idx_nodes_content_tsv']
   }
 }
 
@@ -115,44 +117,6 @@ Table context_imports {
   Indexes {
     (target_branch_id, imported_at) [name: 'idx_imports_target_recent']
     source_node_id
-  }
-}
-
-// ---------- Memory: distilled facts above the raw message layer ----------
-
-Table memories {
-  id uuid [pk]
-  conversation_id uuid [not null, ref: > conversations.id]
-  branch_id uuid [ref: > branches.id]   // null = promoted to conversation-global
-  formed_at_node_id uuid [not null, ref: > nodes.id]
-  content text [not null]
-  importance smallint [not null, default: 50]   // 0-100
-  embedding "vector(1536)"
-  superseded_by uuid [ref: > memories.id]       // self-reference for supersession chain
-  superseded_at_node_id uuid [ref: > nodes.id]  // where the supersession happened
-  created_at timestamptz [not null, default: `now()`]
-
-  Indexes {
-    conversation_id
-    branch_id
-    formed_at_node_id
-    (conversation_id, branch_id) [name: 'idx_mem_conv_branch']
-    embedding [type: hnsw, name: 'idx_mem_embedding_hnsw']
-  }
-}
-
-// Promotion log: track when a memory was elevated from branch-scoped to global.
-Table memory_promotions {
-  id uuid [pk]
-  memory_id uuid [not null, ref: > memories.id]
-  from_branch_id uuid [ref: > branches.id]
-  promoted_by uuid [ref: > users.id]   // null = auto-promotion
-  reason varchar(50) [not null]        // 'manual' | 'cross_branch_usage' | 'high_importance'
-  promoted_at timestamptz [not null, default: `now()`]
-
-  Indexes {
-    memory_id
-    promoted_at
   }
 }
 

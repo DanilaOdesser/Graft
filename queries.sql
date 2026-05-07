@@ -1,5 +1,5 @@
 -- =============================================================================
--- Four core queries for the Agent Context DB
+-- Three core queries for the Agent Context DB
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -114,48 +114,17 @@ ORDER BY rank;
 
 
 -- -----------------------------------------------------------------------------
--- QUERY 2: Find branch-scoped memories that are promotion candidates.
--- -----------------------------------------------------------------------------
--- A memory is a promotion candidate if it's still branch-scoped (branch_id
--- IS NOT NULL), has not been superseded, and the node it was formed at has
--- been imported into >= K *other* branches in the last T days.
---
--- This is the kind of query you'd run on a schedule to drive auto-promotion.
---
--- :min_imports and :days_window are parameters.
-
-SELECT
-  m.id              AS memory_id,
-  m.content,
-  m.importance,
-  m.branch_id       AS origin_branch_id,
-  COUNT(DISTINCT ci.target_branch_id) AS distinct_importing_branches,
-  MAX(ci.imported_at) AS last_imported_at
-FROM memories m
-JOIN context_imports ci
-  ON ci.source_node_id = m.formed_at_node_id
- AND ci.target_branch_id <> m.branch_id          -- imported into a different branch
- AND ci.imported_at >= NOW() - (:days_window || ' days')::interval
-WHERE m.branch_id IS NOT NULL                     -- still branch-scoped
-  AND m.superseded_by IS NULL                     -- still current
-GROUP BY m.id, m.content, m.importance, m.branch_id
-HAVING COUNT(DISTINCT ci.target_branch_id) >= :min_imports
-ORDER BY distinct_importing_branches DESC, m.importance DESC;
-
-
--- -----------------------------------------------------------------------------
--- QUERY 3: Branch divergence report.
+-- QUERY 2: Branch divergence report.
 -- -----------------------------------------------------------------------------
 -- Compare two branches A and B. Return:
---   - nodes only on A's path,
---   - nodes only on B's path,
 --   - their lowest common ancestor,
---   - pairs of semantically-similar nodes that were authored independently
---     on each branch (vector similarity above a threshold).
+--   - count of nodes only on A's path,
+--   - count of nodes only on B's path,
+--   - the actual node ids on each side, for display.
 --
 -- Useful for "should I merge these branches?"
 --
--- :branch_a, :branch_b, :similarity_threshold are parameters.
+-- :branch_a, :branch_b are parameters.
 
 WITH a_head AS (SELECT head_node_id FROM branches WHERE id = :branch_a),
      b_head AS (SELECT head_node_id FROM branches WHERE id = :branch_b),
@@ -195,38 +164,28 @@ only_b AS (
   SELECT ancestor_id AS node_id FROM b_ancestors
   EXCEPT
   SELECT ancestor_id FROM a_ancestors
-),
-
--- Semantically similar nodes that were independently discovered on each side.
--- Vector cosine distance: smaller is more similar; (1 - distance) is similarity.
-parallel_discoveries AS (
-  SELECT na.id AS a_node_id,
-         nb.id AS b_node_id,
-         1 - (na.embedding <=> nb.embedding) AS similarity
-  FROM nodes na
-  JOIN only_a oa ON oa.node_id = na.id
-  JOIN nodes nb ON nb.id IN (SELECT node_id FROM only_b)
-  WHERE na.embedding IS NOT NULL
-    AND nb.embedding IS NOT NULL
-    AND 1 - (na.embedding <=> nb.embedding) >= :similarity_threshold
 )
 
 SELECT
-  (SELECT lca_node_id FROM lca) AS lca_node_id,
-  (SELECT COUNT(*) FROM only_a) AS only_a_count,
-  (SELECT COUNT(*) FROM only_b) AS only_b_count,
-  (SELECT json_agg(row_to_json(p)) FROM parallel_discoveries p) AS parallel_discoveries;
+  (SELECT lca_node_id FROM lca)                          AS lca_node_id,
+  (SELECT COUNT(*) FROM only_a)                          AS only_a_count,
+  (SELECT COUNT(*) FROM only_b)                          AS only_b_count,
+  (SELECT json_agg(node_id) FROM only_a)                 AS only_a_nodes,
+  (SELECT json_agg(node_id) FROM only_b)                 AS only_b_nodes;
 
 
 -- -----------------------------------------------------------------------------
--- QUERY 4: Semantic search across the entire conversation graph,
+-- QUERY 3: Full-text search across the user's conversations,
 --          with branch context.
 -- -----------------------------------------------------------------------------
--- User types a natural-language query; we embed it and find the K most similar
+-- User types a natural-language query; Postgres FTS ranks the K most relevant
 -- nodes across all of the user's conversations, returning each match with its
 -- branch and conversation context so it can be shown for cherry-picking.
 --
--- :query_embedding, :user_id, :k are parameters.
+-- websearch_to_tsquery accepts Google-style syntax ("foo OR bar", -exclude,
+-- "exact phrase"). The GIN index on nodes.content_tsv handles the @@ match.
+--
+-- :query_text, :user_id, :k are parameters.
 
 SELECT
   n.id              AS node_id,
@@ -237,12 +196,12 @@ SELECT
   b.name            AS branch_name,
   c.id              AS conversation_id,
   c.title           AS conversation_title,
-  1 - (n.embedding <=> :query_embedding) AS similarity
+  ts_rank(n.content_tsv, websearch_to_tsquery('english', :query_text)) AS rank
 FROM nodes n
 JOIN branches b      ON b.id = n.branch_id
 JOIN conversations c ON c.id = n.conversation_id
 WHERE c.owner_id = :user_id
-  AND n.embedding IS NOT NULL
   AND b.is_archived = false
-ORDER BY n.embedding <=> :query_embedding   -- HNSW index handles this
+  AND n.content_tsv @@ websearch_to_tsquery('english', :query_text)
+ORDER BY rank DESC, n.created_at DESC
 LIMIT :k;
