@@ -44,10 +44,18 @@ def call_llm(context_nodes: list[dict]) -> str:
         # calling, so this branch should be unreachable in practice.)
         return _stub_reply(len(context_nodes), total_tokens)
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1024,
-        system="\n\n".join(system_chunks) or "You are a helpful AI assistant.",
-        messages=messages,
-    )
-    return response.content[0].text
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            system="\n\n".join(system_chunks) or "You are a helpful AI assistant.",
+            messages=messages,
+        )
+        return response.content[0].text
+    except Exception as exc:
+        # Auth, rate-limit, network, etc. — keep the agent-turn endpoint working
+        # with a stub instead of bubbling 500 to the frontend.
+        import sys
+        print(f"[llm.call_llm] falling back to stub: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+        return _stub_reply(len(context_nodes), total_tokens)
