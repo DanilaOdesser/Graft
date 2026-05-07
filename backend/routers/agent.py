@@ -84,6 +84,7 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         {
             "id": str(r["id"]),
             "source": r["source"],
+            "depth": r["depth"],
             "content": r["content"],
             "token_count": r["token_count"],
             # We need role for the LLM call; fetch from nodes table inside Query 1's

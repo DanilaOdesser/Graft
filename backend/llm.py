@@ -33,10 +33,23 @@ def call_llm(context_nodes: list[dict]) -> str:
 
     client = Anthropic(api_key=api_key)
     system_chunks = [n["content"] for n in context_nodes if n.get("role") == "system"]
+
+    # Query 1 ranks ancestors newest-first (depth ASC). Re-sort so the LLM
+    # receives them in chronological order: ancestors oldest-first (depth DESC),
+    # then non-ancestors (pinned/imported) at the end.
+    def _sort_key(n: dict) -> tuple:
+        if n.get("source") == "ancestor":
+            depth = n.get("depth") or 0
+            return (0, -depth)   # negative so higher depth (older) sorts first
+        return (1, 0)
+
+    chat_nodes = sorted(
+        [n for n in context_nodes if n.get("role") in ("user", "assistant")],
+        key=_sort_key,
+    )
     messages: list[dict] = [
         {"role": n["role"], "content": n["content"]}
-        for n in context_nodes
-        if n.get("role") in ("user", "assistant")
+        for n in chat_nodes
     ]
     if not messages:
         # Anthropic requires at least one user message; surface a stub instead
