@@ -108,3 +108,31 @@ def create_conversation(body: ConversationCreate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(conv)
     return _conv_to_dict(conv)
+
+
+@router.get("/conversations")
+def list_conversations(owner_id: uuid.UUID, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Conversation)
+        .filter(Conversation.owner_id == owner_id)
+        .order_by(Conversation.updated_at.desc())
+        .all()
+    )
+    return [_conv_to_dict(c) for c in rows]
+
+
+@router.get("/conversations/{conv_id}")
+def get_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    branches = (
+        db.query(Branch)
+        .filter(Branch.conversation_id == conv_id, Branch.is_archived == False)  # noqa: E712
+        .order_by(Branch.created_at.asc())
+        .all()
+    )
+    payload = _conv_to_dict(conv)
+    payload["branches"] = [_branch_to_dict(b) for b in branches]
+    return payload

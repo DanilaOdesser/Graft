@@ -43,3 +43,35 @@ def test_create_conversation_rejects_blank_title(client):
         "owner_id": ALEX_USER_ID,
     })
     assert res.status_code == 422
+
+
+def test_list_conversations_returns_recipebox_for_alex(client):
+    res = client.get(f"/api/conversations?owner_id={ALEX_USER_ID}")
+    assert res.status_code == 200
+    rows = res.json()
+    titles = [r["title"] for r in rows]
+    assert "Building RecipeBox" in titles
+
+
+def test_list_conversations_sorted_by_updated_desc(client):
+    res = client.get(f"/api/conversations?owner_id={ALEX_USER_ID}")
+    rows = res.json()
+    timestamps = [r["updated_at"] for r in rows]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+
+def test_get_conversation_includes_non_archived_branches(client):
+    from tests.conftest import RECIPEBOX_CONV_ID
+    res = client.get(f"/api/conversations/{RECIPEBOX_CONV_ID}")
+    assert res.status_code == 200
+    body = res.json()
+    branch_names = {b["name"] for b in body["branches"]}
+    assert "main" in branch_names
+    assert "feat/auth" in branch_names
+    # spike/s3-upload is archived per seed data — must NOT appear
+    assert "spike/s3-upload" not in branch_names
+
+
+def test_get_conversation_404_on_missing(client):
+    res = client.get(f"/api/conversations/00000000-0000-0000-0000-000000000000")
+    assert res.status_code == 404
