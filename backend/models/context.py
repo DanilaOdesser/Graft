@@ -63,6 +63,21 @@ class NodeTag(Base):
     tag_id = Column(UUID(as_uuid=True), ForeignKey("tags.id"), primary_key=True)
 
 
+class ClaudeExport(Base):
+    __tablename__ = "claude_exports"
+
+    session_id = Column(UUID(as_uuid=True), primary_key=True)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
+    branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=False)
+    source_node_id = Column(UUID(as_uuid=True), ForeignKey("nodes.id"), nullable=False)
+    file_path = Column(Text, nullable=False)
+    cwd = Column(Text, nullable=False)
+    exported_message_count = Column(Integer, nullable=False)
+    last_imported_uuid = Column(Text, nullable=True)
+    exported_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    last_imported_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class BranchShare(Base):
     __tablename__ = "branch_shares"
     __table_args__ = (

@@ -29,6 +29,10 @@ export const api = {
     request(`/nodes/${nodeId}/context?budget=${budget}`),
   agentTurn: (data) =>
     request("/agent/turn", { method: "POST", body: JSON.stringify(data) }),
+  exportClaude: (nodeId, launch = true) =>
+    request(`/nodes/${nodeId}/export-claude?launch=${launch}`, { method: "POST" }),
+  syncClaude: (branchId) =>
+    request(`/branches/${branchId}/sync-claude`, { method: "POST" }),
 
   // DEV-B endpoints
   createNode: (data) =>

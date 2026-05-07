@@ -196,4 +196,24 @@ CREATE TABLE branch_shares (
     UNIQUE (branch_id, shared_with)
 );
 
+-- ---------- claude_exports ------------------------------------------------
+-- Bookkeeping for Claude Code round-trip sessions. Written by the export
+-- endpoint; read on the next export click so any new CC turns get appended
+-- to the source branch before re-exporting.
+
+CREATE TABLE claude_exports (
+    session_id              UUID         PRIMARY KEY,
+    conversation_id         UUID         NOT NULL REFERENCES conversations(id),
+    branch_id               UUID         NOT NULL REFERENCES branches(id),
+    source_node_id          UUID         NOT NULL REFERENCES nodes(id),
+    file_path               TEXT         NOT NULL,
+    cwd                     TEXT         NOT NULL,
+    exported_message_count  INT          NOT NULL,
+    last_imported_uuid      TEXT,
+    exported_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_imported_at        TIMESTAMPTZ
+);
+
+CREATE INDEX idx_claude_exports_branch ON claude_exports(branch_id, exported_at DESC);
+
 COMMIT;
