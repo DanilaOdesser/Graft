@@ -102,20 +102,66 @@ Each index has a query that justifies it. That's the angle for the "indexes / pe
 ```
 Graft/
 ├── README.md
-├── backend/
-│   └── main.py               # FastAPI entry point (stub)
+├── backend/                  # FastAPI + SQLAlchemy
+│   ├── main.py
+│   ├── db.py
+│   ├── llm.py                # Claude API client + stub fallback
+│   ├── schemas.py
+│   ├── models/{core,context}.py
+│   ├── routers/{conversations,branches,agent,nodes,context,search}.py
+│   └── tests/
+├── frontend/                 # React + Vite + Tailwind v4
+│   └── src/
+│       ├── api.js
+│       ├── App.jsx
+│       ├── pages/{ConversationList,ConversationView,SearchPage}.jsx
+│       └── components/{BranchSidebar,MessageThread,SendBox,PinsPanel,ImportModal,SearchResults}.jsx
 ├── db/
-│   ├── schema.dbml            # Full schema for dbdiagram.io
-│   ├── queries.sql            # Three core queries with comments
-│   └── seed/
-│       ├── data.json          # Sample data (valid against schema)
-│       └── relations.md       # Explains relationships in sample data
+│   ├── schema.dbml
+│   ├── queries.sql
+│   └── seed/{init.sql,load_seed.py,data.json,relations.md}
+├── render.yaml               # Render Blueprint for backend deploy
 └── docs/
-    ├── ROADMAP.md             # 15-day implementation plan
+    ├── ROADMAP.md
     ├── 01_entities_and_scenarios.md
     ├── 02_domain_description.md
-    └── 03_database_schema.md  # SQL DDL + DBML + index justifications
+    └── 03_database_schema.md
 ```
+
+## Running locally
+
+Prereqs: Python 3.11+, Node 20+, a Postgres DB (Supabase free tier works — use the **Session pooler** URI to avoid IPv6 DNS issues).
+
+```bash
+cp .env.example .env
+# Edit .env: paste DATABASE_URL (Supabase Session-pooler URI).
+# ANTHROPIC_API_KEY is optional — without it, the agent returns a stub reply.
+
+# 1. Schema + seed (one-time)
+psql "$(grep ^DATABASE_URL .env | cut -d= -f2-)" -v ON_ERROR_STOP=1 -f db/seed/init.sql
+python3 db/seed/load_seed.py
+
+# 2. Backend (terminal 1)
+cd backend
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# 3. Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev    # http://localhost:5173
+
+# 4. Tests
+cd backend && source venv/bin/activate && pytest -v
+```
+
+Open http://localhost:5173, click into a seed conversation, switch branches, send messages, search.
+
+## Deploying
+
+- **Backend**: connect this repo as a Render Blueprint (`render.yaml` auto-discovered). Set `DATABASE_URL` and optional `ANTHROPIC_API_KEY` in the Render dashboard.
+- **Frontend**: deployed by DEV-B on Vercel. Set `VITE_API_URL` to the Render URL of the backend.
 
 ---
 
