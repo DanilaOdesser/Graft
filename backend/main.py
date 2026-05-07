@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.nodes import router as nodes_router
 from routers.context import router as context_router
 from routers.search import router as search_router
+from routers.conversations import router as conversations_router
+from routers.branches import router as branches_router
+from routers.agent import router as agent_router
 
 app = FastAPI(title="Graft API", description="Git for agent conversations")
 
@@ -20,6 +23,9 @@ app.add_middleware(
 app.include_router(nodes_router, prefix="/api")
 app.include_router(context_router, prefix="/api")
 app.include_router(search_router, prefix="/api")
+app.include_router(conversations_router, prefix="/api")
+app.include_router(branches_router, prefix="/api")
+app.include_router(agent_router, prefix="/api")
 
 
 @app.get("/health")
