@@ -14,6 +14,7 @@ export default function ConversationView() {
   const [branches, setBranches] = useState([]);
   const [selected, setSelected] = useState(null);
   const [contextNodes, setContextNodes] = useState([]);
+  const [allNodes, setAllNodes] = useState([]);
   const [showPins, setShowPins] = useState(false);
   const [showImports, setShowImports] = useState(false);
   const [imports, setImports] = useState([]);
@@ -22,7 +23,9 @@ export default function ConversationView() {
   const [pinningNode, setPinningNode] = useState(null);
   const [pinPriority, setPinPriority] = useState(5);
   const [pinReason, setPinReason] = useState("");
+  const [selectedGraphNode, setSelectedGraphNode] = useState(null);
 
+  // Load conversation + branches
   useEffect(() => {
     api.getConversation(id).then((data) => {
       setConv(data);
@@ -32,6 +35,7 @@ export default function ConversationView() {
     }).catch(() => {});
   }, [id]);
 
+  // Fetch context for selected branch (thread view)
   const refreshContext = useCallback(() => {
     if (!selected?.head_node_id) return;
     api.getContext(selected.head_node_id, 8000).then((data) => {
@@ -41,6 +45,34 @@ export default function ConversationView() {
 
   useEffect(() => { refreshContext(); }, [refreshContext]);
 
+  // Fetch ALL nodes across ALL branches for the graph view
+  useEffect(() => {
+    if (branches.length === 0) return;
+    const fetchAll = async () => {
+      const seenIds = new Set();
+      const merged = [];
+      // Fetch context from each branch head with a large budget to get all nodes
+      const promises = branches.map((b) =>
+        b.head_node_id
+          ? api.getContext(b.head_node_id, 999999).catch(() => [])
+          : Promise.resolve([])
+      );
+      const results = await Promise.all(promises);
+      results.forEach((nodes) => {
+        const arr = Array.isArray(nodes) ? nodes : nodes?.nodes || [];
+        arr.forEach((n) => {
+          if (!seenIds.has(n.id)) {
+            seenIds.add(n.id);
+            merged.push(n);
+          }
+        });
+      });
+      setAllNodes(merged);
+    };
+    fetchAll();
+  }, [branches]);
+
+  // Imports
   const refreshImports = useCallback(() => {
     if (!selected?.id) return;
     api.getImports(selected.id).then((data) => setImports(Array.isArray(data) ? data : [])).catch(() => setImports([]));
@@ -72,7 +104,12 @@ export default function ConversationView() {
 
   const handlePin = async () => {
     if (!pinningNode || !selected) return;
-    await api.createPin(selected.id, { node_id: pinningNode.id, priority: pinPriority, reason: pinReason, pinned_by: DEFAULT_USER_ID });
+    await api.createPin(selected.id, {
+      node_id: pinningNode.id,
+      priority: pinPriority,
+      reason: pinReason,
+      pinned_by: DEFAULT_USER_ID,
+    });
     setPinningNode(null);
     setPinPriority(5);
     setPinReason("");
@@ -83,7 +120,17 @@ export default function ConversationView() {
     setImports((prev) => prev.filter((i) => i.id !== impId));
   };
 
-  if (!conv) return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">Loading...</div>;
+  const handleGraphNodeSelect = (nodeData) => {
+    setSelectedGraphNode(nodeData);
+  };
+
+  if (!conv) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -98,57 +145,187 @@ export default function ConversationView() {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
+        {/* Header bar */}
         <div className="h-11 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center px-4 gap-3 shrink-0">
-          <Link to="/" className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] text-xs">&larr; Back</Link>
+          <Link to="/" className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] text-xs">
+            &larr; Back
+          </Link>
           <span className="text-sm font-medium text-[var(--color-text)] truncate">{conv.title}</span>
+
           <div className="ml-auto flex items-center gap-1">
             {["thread", "graph"].map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${tab === t ? "bg-[var(--color-blue-dim)] text-[var(--color-blue)]" : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"}`}>
+              <button
+                key={t}
+                onClick={() => { setTab(t); setSelectedGraphNode(null); }}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  tab === t
+                    ? "bg-[var(--color-blue-dim)] text-[var(--color-blue)]"
+                    : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+                }`}
+              >
                 {t === "thread" ? "Thread" : "Graph"}
               </button>
             ))}
             <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
-            <button onClick={() => { setShowPins(!showPins); setShowImports(false); }} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${showPins ? "bg-[var(--color-amber-dim)] text-[var(--color-amber)]" : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"}`}>Pins</button>
-            <button onClick={() => { setShowImports(!showImports); setShowPins(false); }} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${showImports ? "bg-[var(--color-violet-dim)] text-[var(--color-violet)]" : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"}`}>Imports</button>
+            <button
+              onClick={() => { setShowPins(!showPins); setShowImports(false); }}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                showPins
+                  ? "bg-[var(--color-amber-dim)] text-[var(--color-amber)]"
+                  : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              Pins
+            </button>
+            <button
+              onClick={() => { setShowImports(!showImports); setShowPins(false); }}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                showImports
+                  ? "bg-[var(--color-violet-dim)] text-[var(--color-violet)]"
+                  : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              Imports
+            </button>
           </div>
         </div>
 
-        {/* Content */}
+        {/* Content area */}
         <div className="flex-1 flex overflow-hidden">
+          {/* Main content */}
           <div className="flex-1 flex flex-col min-w-0">
             {tab === "thread" ? (
               <>
-                <MessageThread nodes={contextNodes} onPin={(node) => setPinningNode(node)} onImport={(node) => setImportTarget(node)} />
-                <SendBox headNodeId={selected?.head_node_id} branchId={selected?.id} conversationId={id} onTurnComplete={handleTurnComplete} />
+                <MessageThread
+                  nodes={contextNodes}
+                  onPin={(node) => setPinningNode(node)}
+                  onImport={(node) => setImportTarget(node)}
+                />
+                <SendBox
+                  headNodeId={selected?.head_node_id}
+                  branchId={selected?.id}
+                  conversationId={id}
+                  onTurnComplete={handleTurnComplete}
+                />
               </>
             ) : (
-              <ConversationGraph contextNodes={contextNodes} branches={branches} selectedBranchId={selected?.id} onNodeClick={(n) => setPinningNode(n)} />
+              <ConversationGraph
+                allNodes={allNodes}
+                branches={branches}
+                onNodeSelect={handleGraphNodeSelect}
+                selectedNodeId={selectedGraphNode?.id}
+              />
             )}
           </div>
 
-          {/* Right panels */}
+          {/* Graph detail panel (right side, only in graph tab) */}
+          {tab === "graph" && selectedGraphNode && (
+            <div className="w-80 border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col overflow-y-auto shrink-0 animate-in">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                <h3 className="text-xs font-semibold text-[var(--color-text)]">Node Details</h3>
+                <button
+                  onClick={() => setSelectedGraphNode(null)}
+                  className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Meta */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white"
+                      style={{ background: selectedGraphNode._branchColor }}
+                    >
+                      {selectedGraphNode.role || selectedGraphNode.node_type}
+                    </span>
+                    <span className="text-[10px] font-mono text-[var(--color-text-faint)]">
+                      {selectedGraphNode._branchName}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--color-text-faint)]">
+                    <span>ID: <span className="font-mono">{selectedGraphNode.id?.slice(0, 12)}...</span></span>
+                    <span>{selectedGraphNode.token_count} tokens</span>
+                    {selectedGraphNode.source && <span>Source: {selectedGraphNode.source}</span>}
+                    {selectedGraphNode.depth != null && <span>Depth: {selectedGraphNode.depth}</span>}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] font-semibold mb-1.5">Content</div>
+                  <div className="rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] p-3 max-h-64 overflow-y-auto">
+                    <p className="text-xs text-[var(--color-text-dim)] leading-relaxed whitespace-pre-wrap">
+                      {selectedGraphNode.content}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] font-semibold mb-2">Actions</div>
+                  <div className="flex flex-col gap-1.5">
+                    <button
+                      onClick={() => setPinningNode(selectedGraphNode)}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-amber)] hover:text-[var(--color-amber)] hover:bg-[var(--color-amber-dim)] transition-colors text-left"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349L11 6.477V16h2a1 1 0 110 2H7a1 1 0 110-2h2V6.477L6.237 7.582l1.715 5.349a1 1 0 01-.285 1.05A3.989 3.989 0 015 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.789l1.599.799L9 4.323V3a1 1 0 011-1z" />
+                      </svg>
+                      Pin to current branch
+                    </button>
+                    <button
+                      onClick={() => setImportTarget(selectedGraphNode)}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-emerald)] hover:text-[var(--color-emerald)] hover:bg-[var(--color-emerald-dim)] transition-colors text-left"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Import to another branch
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pins panel */}
           {showPins && selected && (
             <PinsPanel branchId={selected.id} onClose={() => setShowPins(false)} />
           )}
+
+          {/* Imports panel */}
           {showImports && selected && (
             <div className="w-64 border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col overflow-y-auto">
               <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border)]">
                 <h3 className="text-xs font-semibold text-[var(--color-text)]">Imports</h3>
                 <button onClick={() => setShowImports(false)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
               <div className="p-2 space-y-1.5">
-                {imports.length === 0 && <p className="text-[11px] text-[var(--color-text-faint)] text-center py-4">No imports on this branch</p>}
+                {imports.length === 0 && (
+                  <p className="text-[11px] text-[var(--color-text-faint)] text-center py-4">No imports on this branch</p>
+                )}
                 {imports.map((imp) => (
                   <div key={imp.id} className="group rounded-lg border border-[var(--color-border)] p-2 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="font-[family-name:var(--font-mono)] text-[10px] text-[var(--color-violet)]">
                         {imp.include_descendants ? "subtree" : "node"}
                       </span>
-                      <button onClick={() => handleDeleteImport(imp.id)} className="text-[var(--color-text-faint)] hover:text-[var(--color-red)] opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      <button
+                        onClick={() => handleDeleteImport(imp.id)}
+                        className="text-[var(--color-text-faint)] hover:text-[var(--color-red)] opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                     </div>
                     <p className="text-[var(--color-text-faint)] mt-1 truncate">{imp.source_node_id?.slice(0, 8)}...</p>
@@ -174,11 +351,19 @@ export default function ConversationView() {
               </div>
               <div>
                 <label className="text-xs font-medium text-[var(--color-text-dim)] block mb-1">Priority (0-10)</label>
-                <input type="number" min={0} max={10} value={pinPriority} onChange={(e) => setPinPriority(Number(e.target.value))} className="w-20 px-2 py-1.5 rounded border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-blue)]" />
+                <input
+                  type="number" min={0} max={10} value={pinPriority}
+                  onChange={(e) => setPinPriority(Number(e.target.value))}
+                  className="w-20 px-2 py-1.5 rounded border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-blue)]"
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-[var(--color-text-dim)] block mb-1">Reason (optional)</label>
-                <input value={pinReason} onChange={(e) => setPinReason(e.target.value)} placeholder="Why pin this?" className="w-full px-3 py-1.5 rounded border border-[var(--color-border)] text-sm placeholder:text-[var(--color-text-faint)] focus:outline-none focus:border-[var(--color-blue)]" />
+                <input
+                  value={pinReason} onChange={(e) => setPinReason(e.target.value)}
+                  placeholder="Why pin this?"
+                  className="w-full px-3 py-1.5 rounded border border-[var(--color-border)] text-sm placeholder:text-[var(--color-text-faint)] focus:outline-none focus:border-[var(--color-blue)]"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-[var(--color-border)]">
@@ -189,7 +374,9 @@ export default function ConversationView() {
         </div>
       )}
 
-      {importTarget && <ImportModal sourceNode={importTarget} conversationId={id} onClose={() => setImportTarget(null)} />}
+      {importTarget && (
+        <ImportModal sourceNode={importTarget} conversationId={id} onClose={() => setImportTarget(null)} />
+      )}
     </div>
   );
 }
