@@ -1,8 +1,14 @@
 import pytest
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from fastapi.testclient import TestClient
+from main import app
 from sse import subscribe, publish, unsubscribe
+from llm import summarize_nodes
+
+ALEX_USER_ID = "2f75cca7-7ebc-5af0-a919-f0bfe59e4125"
 
 @pytest.mark.asyncio
 async def test_publish_delivers_to_subscriber():
@@ -20,8 +26,6 @@ async def test_unsubscribe_stops_delivery():
     await publish("conv-xyz", "test_event", {})
     assert q.empty()
 
-from llm import summarize_nodes
-
 def test_summarize_nodes_stub_when_no_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     nodes = [
@@ -35,11 +39,6 @@ def test_summarize_nodes_stub_when_no_key(monkeypatch):
 def test_summarize_nodes_empty():
     result = summarize_nodes([])
     assert isinstance(result, str)
-
-from fastapi.testclient import TestClient
-from main import app
-
-ALEX_USER_ID = "2f75cca7-7ebc-5af0-a919-f0bfe59e4125"
 
 @pytest.fixture
 def client():
