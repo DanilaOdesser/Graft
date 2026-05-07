@@ -8,11 +8,20 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from db import get_db
+from models.context import NodeSummary
 from models.core import Branch, Node
 from schemas import BranchCreate
+from llm import summarize_nodes
+from sse import publish
 
 router = APIRouter()
+
+
+class CommitRequest(BaseModel):
+    commit_message: str
 
 
 QUERY_1_CONTEXT_ASSEMBLY = """
@@ -150,6 +159,93 @@ def archive_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
     branch.is_archived = True
     db.commit()
     return Response(status_code=204)
+
+
+@router.post("/branches/{branch_id}/commit", status_code=201)
+async def commit_branch(
+    branch_id: uuid.UUID,
+    body: CommitRequest,
+    db: Session = Depends(get_db),
+):
+    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+
+    head = db.query(Node).filter(Node.id == branch.head_node_id).first()
+    if not head:
+        raise HTTPException(status_code=400, detail="Branch has no head node")
+    if head.node_type == "summary":
+        raise HTTPException(status_code=400, detail="Nothing to commit — HEAD is already a summary node")
+
+    # Walk ancestors back to the last summary node (exclusive) or root
+    uncommitted: list[Node] = []
+    current: Node | None = head
+    while current:
+        uncommitted.append(current)
+        if current.parent_id is None:
+            break
+        parent = db.query(Node).filter(Node.id == current.parent_id).first()
+        if parent is None or parent.node_type == "summary":
+            break
+        current = parent
+
+    if not uncommitted:
+        raise HTTPException(status_code=400, detail="Nothing to commit")
+
+    # Build ordered context for LLM (oldest first, user/assistant only)
+    context = [
+        {"role": n.role or n.node_type, "content": n.content}
+        for n in reversed(uncommitted)
+        if n.role in ("user", "assistant")
+    ]
+    llm_summary = summarize_nodes(context)
+    content = f"{body.commit_message}\n\n{llm_summary}"
+
+    summary_node = Node(
+        id=uuid.uuid4(),
+        conversation_id=branch.conversation_id,
+        parent_id=head.id,
+        branch_id=branch.id,
+        node_type="summary",
+        role=None,
+        content=content,
+        token_count=int(len(content.split()) * 1.3),
+    )
+    db.add(summary_node)
+    db.flush()
+
+    for n in uncommitted:
+        db.add(NodeSummary(
+            summary_node_id=summary_node.id,
+            summarized_node_id=n.id,
+        ))
+
+    branch.head_node_id = summary_node.id
+    db.execute(
+        text("UPDATE conversations SET updated_at = now() WHERE id = :cid"),
+        {"cid": str(branch.conversation_id)},
+    )
+    db.commit()
+    db.refresh(summary_node)
+    db.refresh(branch)
+
+    node_dict = {
+        "id": str(summary_node.id),
+        "conversation_id": str(summary_node.conversation_id),
+        "parent_id": str(summary_node.parent_id),
+        "branch_id": str(summary_node.branch_id),
+        "node_type": summary_node.node_type,
+        "role": summary_node.node_type,  # role col is NULL for summary; return node_type instead
+        "content": summary_node.content,
+        "token_count": summary_node.token_count,
+        "created_at": str(summary_node.created_at),
+    }
+    await publish(str(branch.conversation_id), "commit_created", {
+        "node": node_dict,
+        "branch": _branch_to_dict(branch),
+    })
+
+    return {"node": node_dict, "commit_message": body.commit_message, "llm_summary": llm_summary}
 
 
 @router.get("/nodes/{node_id}/context")

@@ -35,3 +35,66 @@ def test_summarize_nodes_stub_when_no_key(monkeypatch):
 def test_summarize_nodes_empty():
     result = summarize_nodes([])
     assert isinstance(result, str)
+
+from fastapi.testclient import TestClient
+from main import app
+
+ALEX_USER_ID = "2f75cca7-7ebc-5af0-a919-f0bfe59e4125"
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+def test_commit_creates_summary_node(client):
+    # Create a fresh conversation with some turns first
+    conv = client.post("/api/conversations", json={
+        "title": f"commit-test-{os.urandom(4).hex()}",
+        "owner_id": ALEX_USER_ID,
+    }).json()
+    conv_id = conv["id"]
+    conv_detail = client.get(f"/api/conversations/{conv_id}").json()
+    branch_id = conv_detail["branches"][0]["id"]
+    head_id = conv_detail["branches"][0]["head_node_id"]
+
+    # Send a turn
+    turn = client.post("/api/agent/turn", json={
+        "node_id": head_id,
+        "branch_id": branch_id,
+        "user_message": "What is 2+2?",
+        "budget": 4096,
+    }).json()
+
+    # Commit
+    res = client.post(f"/api/branches/{branch_id}/commit", json={
+        "commit_message": "First math question",
+    })
+    assert res.status_code == 201
+    body = res.json()
+    assert "node" in body
+    assert body["node"]["node_type"] == "summary"
+    assert body["node"]["role"] == "summary"
+    assert body["commit_message"] == "First math question"
+    assert "llm_summary" in body
+    # Branch head should now point to the summary node
+    branch = client.get(f"/api/branches/{branch_id}").json()
+    assert branch["head_node_id"] == body["node"]["id"]
+
+def test_commit_returns_400_when_head_is_already_summary(client):
+    conv = client.post("/api/conversations", json={
+        "title": f"commit-idempotent-{os.urandom(4).hex()}",
+        "owner_id": ALEX_USER_ID,
+    }).json()
+    conv_id = conv["id"]
+    conv_detail = client.get(f"/api/conversations/{conv_id}").json()
+    branch_id = conv_detail["branches"][0]["id"]
+    head_id = conv_detail["branches"][0]["head_node_id"]
+    client.post("/api/agent/turn", json={
+        "node_id": head_id, "branch_id": branch_id,
+        "user_message": "hello", "budget": 4096,
+    })
+    # First commit succeeds
+    r1 = client.post(f"/api/branches/{branch_id}/commit", json={"commit_message": "init"})
+    assert r1.status_code == 201
+    # Second commit with nothing new should fail
+    r2 = client.post(f"/api/branches/{branch_id}/commit", json={"commit_message": "empty"})
+    assert r2.status_code == 400
