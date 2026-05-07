@@ -30,3 +30,33 @@ def test_fork_branch_rejects_duplicate_name_in_same_conversation(client):
         "created_by": ALEX_USER_ID,
     })
     assert res.status_code == 409
+
+
+def test_get_branch_returns_main(client):
+    res = client.get(f"/api/branches/{BR_MAIN_ID}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["name"] == "main"
+    assert body["is_archived"] is False
+    assert body["base_node_id"] is None  # main is the root branch
+
+
+def test_archive_branch_sets_is_archived(client):
+    # Create a throwaway branch first
+    main = client.get(f"/api/branches/{BR_MAIN_ID}").json()
+    create = client.post(f"/api/conversations/{RECIPEBOX_CONV_ID}/branches", json={
+        "name": f"to-archive-{uuid.uuid4().hex[:6]}",
+        "fork_node_id": main["head_node_id"],
+        "created_by": ALEX_USER_ID,
+    }).json()
+
+    res = client.post(f"/api/branches/{create['id']}/archive")
+    assert res.status_code == 204
+
+    after = client.get(f"/api/branches/{create['id']}").json()
+    assert after["is_archived"] is True
+
+
+def test_get_branch_404_missing(client):
+    res = client.get("/api/branches/00000000-0000-0000-0000-000000000000")
+    assert res.status_code == 404

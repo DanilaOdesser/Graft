@@ -60,3 +60,13 @@ def get_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
     return _branch_to_dict(branch)
+
+
+@router.post("/branches/{branch_id}/archive", status_code=204)
+def archive_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
+    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    branch.is_archived = True
+    db.commit()
+    return Response(status_code=204)
