@@ -10,7 +10,9 @@ import {
   Handle,
   Position,
   NodeToolbar,
+  useReactFlow,
 } from "@xyflow/react";
+import { api } from "../api";
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 
@@ -58,6 +60,7 @@ function GraphNode({ data, selected }) {
   const c = data._colors;
   const icon = roleIcons[data.role] || roleIcons[data.node_type] || "?";
   const isHead = data._isHead;
+  const isSummary = data.node_type === "summary";
   const isPinned = data._isPinned;
   const isImportSource = data._isImportSource;
 
@@ -101,7 +104,11 @@ function GraphNode({ data, selected }) {
           borderColor: selected ? c.main : isPinned ? PIN_COLOR : `${c.main}25`,
           boxShadow: selected
             ? `0 0 0 3px ${c.ring}`
-            : isHead ? `0 2px 8px ${c.main}20` : "0 1px 3px rgba(0,0,0,0.04)",
+            : isSummary
+            ? `0 0 0 2px ${c.main}50, 0 0 0 5px ${c.ring}`
+            : isHead
+            ? `0 2px 8px ${c.main}20`
+            : "0 1px 3px rgba(0,0,0,0.04)",
           outline: isImportSource ? `2px dashed ${IMPORT_COLOR}40` : undefined,
           outlineOffset: "2px",
         }}
@@ -133,9 +140,71 @@ function GraphNode({ data, selected }) {
   );
 }
 
+function SearchOverlay({ conversationId, userId, onNodeSelect }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); setOpen(false); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.search(query, userId, 20);
+        const rows = Array.isArray(data) ? data : [];
+        const filtered = rows.filter((r) => r.conversation_id === conversationId);
+        setResults(filtered.slice(0, 8));
+        setOpen(true);
+      } catch { setResults([]); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, conversationId, userId]);
+
+  const handleSelect = (r) => {
+    onNodeSelect({ id: r.node_id, ...r });
+    fitView({ nodes: [{ id: r.node_id }], padding: 0.4, duration: 300 });
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div className="absolute top-3 right-3 z-10 w-64">
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setQuery(""))}
+        placeholder="Search nodes\u2026"
+        className="w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-white shadow-sm focus:outline-none focus:border-[var(--color-blue)] focus:ring-1 focus:ring-[var(--color-blue-ring)]"
+      />
+      {open && (
+        <div className="mt-1 bg-white border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          {results.length === 0 ? (
+            <div className="px-3 py-2 text-[11px] text-gray-400">No matches in this conversation</div>
+          ) : results.map((r) => (
+            <button
+              key={r.node_id}
+              onClick={() => handleSelect(r)}
+              className="w-full text-left px-3 py-2 hover:bg-[var(--color-surface-2)] border-b border-[var(--color-border)] last:border-0"
+            >
+              <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded text-white mr-1.5" style={{ background: "#6b7280" }}>
+                {r.role || "?"}
+              </span>
+              <span className="text-[11px] text-gray-600">{(r.content || "").slice(0, 60)}\u2026</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const nodeTypes = { graphNode: GraphNode };
 
-export default function ConversationGraph({ allNodes, branches, pins = [], imports = [], onNodeSelect, selectedNodeId }) {
+export default function ConversationGraph({
+  allNodes, branches, pins = [], imports = [],
+  onNodeSelect, selectedNodeId,
+  conversationId, userId,
+}) {
   const [hoveredNode, setHoveredNode] = useState(null);
 
   const branchMap = useMemo(() => {
@@ -191,8 +260,11 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
       const pinnedOnBranches = pinnedNodeMap.get(n.id);
       const importedByBranches = importSourceMap.get(n.id);
 
-      const words = (n.content || "").split(/\s+/).slice(0, 5).join(" ");
-      const label = words.length > 28 ? words.slice(0, 28) + "..." : words;
+      const isSummaryNode = n.node_type === "summary";
+      const rawLabel = isSummaryNode
+        ? (n.content || "").split("\n")[0]
+        : (n.content || "").split(/\s+/).slice(0, 5).join(" ");
+      const label = rawLabel.length > 32 ? rawLabel.slice(0, 32) + "\u2026" : rawLabel;
 
       flowNodeList.push({
         id: n.id,
@@ -329,6 +401,13 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
         <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} pannable zoomable
           className="!bg-white/90 !border-[var(--color-border)] !shadow-sm !rounded-lg"
           style={{ width: 140, height: 90 }} />
+        {conversationId && userId && (
+          <SearchOverlay
+            conversationId={conversationId}
+            userId={userId}
+            onNodeSelect={onNodeSelect}
+          />
+        )}
       </ReactFlow>
 
       {/* Legend */}

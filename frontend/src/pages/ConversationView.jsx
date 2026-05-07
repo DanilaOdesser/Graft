@@ -264,6 +264,8 @@ export default function ConversationView() {
                 imports={allImports}
                 onNodeSelect={handleGraphNodeSelect}
                 selectedNodeId={selectedGraphNode?.id}
+                conversationId={id}
+                userId={DEFAULT_USER_ID}
               />
             )}
           </div>
