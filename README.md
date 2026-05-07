@@ -1,126 +1,238 @@
-# Agent Context DB — Project Summary
+# Graft — Git for Agent Conversations
 
-## What we're building
+A database-driven app that brings Git-style version control to AI agent conversations. Branch, pin, cherry-pick, and search across long-running chats — the DB is the protagonist.
 
-**"Git for agent conversations."** A database that lets users branch, cherry-pick, and merge context across long-running chats with an AI agent (think Claude Code, but the conversation history is a DAG instead of a flat list).
+## The Problem
 
-The agent itself is a thin wrapper over an LLM API. The interesting work — figuring out *what context to include on every turn* — happens in the database. That's the whole pitch: the DB is the protagonist.
+Long agent conversations get bloated. You want to try something speculative without polluting your main thread, or you remember solving a problem in a different chat and want to pull that context in. Today you copy-paste. Graft builds proper structure for it.
 
-## The problem it solves
+## Core Concepts
 
-Long agent conversations get bloated. You want to try something speculative without polluting your main thread, or you remember solving a problem in a different chat three days ago and want to pull that context in. Today you copy-paste. We're building proper structure for it.
+| Concept | What it does |
+|---------|-------------|
+| **Conversation** | A DAG of nodes (messages), owned by a user |
+| **Branch** | Named pointer into the DAG — like a git branch |
+| **Pin** | "Always include this node in context on this branch" |
+| **Import** | Cherry-pick a node (or subtree) from another branch |
+| **Summary** | Condense old messages to save tokens |
 
-## Core mental model
+## Tech Stack
 
-- **Conversation** = a DAG of nodes (messages or commits), owned by a user.
-- **Branches** = named pointers into the DAG (like git branches). They don't *contain* nodes; they point at a leaf.
-- **Pins** = "always include this node in my context when I'm on this branch."
-- **Imports** = cherry-picked nodes (or subtrees) from another branch.
-- **Summaries** = a node that represents a range of older nodes; replaces them in context to save tokens.
+| Layer | Technology |
+|-------|-----------|
+| Database | PostgreSQL (Supabase) — closure table, full-text search, GIN indexes |
+| Backend | FastAPI + SQLAlchemy 2.0 |
+| Frontend | React + Vite + Tailwind CSS v4 |
+| LLM | Claude API (with stub fallback) |
+| Hosting | Render (backend) + Vercel (frontend) + Supabase (DB) |
 
-## Schema (high level)
+## Schema (11 tables)
 
-| Table | What it does |
-|---|---|
-| `users` | Owners |
-| `conversations` | Top-level workspace |
-| `nodes` | Every message/commit; has `parent_id`, content, full-text search vector |
-| `node_ancestry` | Closure table — fast ancestor lookups |
-| `branches` | Named pointer with `head_node_id` and `base_node_id` |
-| `context_pins` | "Always include this node on this branch" |
-| `context_imports` | Cherry-picks from other branches |
-| `node_summaries` | Maps a summary node to the nodes it replaces |
-| `tags`, `node_tags`, `branch_shares` | Social/organization layer (Faker fodder) |
+`users` · `conversations` · `nodes` · `node_ancestry` · `branches` · `context_pins` · `context_imports` · `node_summaries` · `tags` · `node_tags` · `branch_shares`
 
-Full DBML is in `db/schema.dbml`.
+Full DDL: [`docs/03_database_schema.md`](docs/03_database_schema.md) · DBML: [`db/schema.dbml`](db/schema.dbml)
 
-## The three core queries
+## Three Core Queries
 
-1. **Context assembly under a token budget** — the hot-path query. Walks ancestors via the closure table, unions with pinned + imported nodes, elides nodes that have been summarized, ranks by priority/recency, cumulative-sums tokens until the budget runs out. This is the showpiece.
+1. **Context Assembly** (hot path) — walks ancestors via closure table, unions pinned + imported nodes, elides summaries, ranks by priority/recency, truncates at token budget
+2. **Branch Divergence** — finds LCA of two branches, computes set differences for merge decisions
+3. **Full-Text Search** — `websearch_to_tsquery` + GIN index across all conversations with branch context
 
-2. **Branch divergence report** — given two branches, find their LCA, what's only on each side, and the size of the divergence. Useful for "should we merge?"
+Full SQL: [`db/queries.sql`](db/queries.sql)
 
-3. **Full-text search across all conversations** — user enters a natural-language query; Postgres full-text search (`tsvector` + `websearch_to_tsquery`) ranks matches by relevance and returns them with their branch/conversation context for cherry-picking.
+---
 
-Full SQL in `db/queries.sql`.
+## Running Locally
 
-## Indexes worth talking about in the write-up
+### Prerequisites
 
-- **Closure table** `(ancestor_id, descendant_id)` — makes ancestry a single join.
-- **GIN** on `nodes.content_tsv` — full-text search.
-- **Composite** `(conversation_id, updated_at)` — recent conversations list.
-- **Composite** `(branch_id, priority)` on pins — context assembly ordering.
-- **Partial** `WHERE is_archived = false` on branches — active-branch lookups.
+- Python 3.11+
+- Node.js 20+
+- PostgreSQL database (Supabase free tier works — use the **Session pooler** URI)
 
-Each index has a query that justifies it. That's the angle for the "indexes / performance" section of the rubric.
+### 1. Clone and configure
 
-## Stack (proposed)
+```bash
+git clone https://github.com/DanilaOdesser/Graft.git
+cd Graft
+cp .env.example .env
+```
 
-- **DB**: Postgres (built-in full-text search; no extensions needed)
-- **Backend**: FastAPI + SQLAlchemy
-- **Frontend**: React (minimal — show the branch DAG, let user cherry-pick)
-- **Hosting**: Supabase for DB, Render or similar for backend, Vercel for frontend
-- **Seed data**: real-ish chat transcripts for substantive content + Faker for the user/social layer
+Edit `.env`:
+```
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.YOUR_REF.supabase.co:5432/postgres
+ANTHROPIC_API_KEY=sk-ant-...   # optional — without it, agent returns a stub reply
+```
 
-## Scope for the deadline
+### 2. Set up the database (one-time)
 
-**Build for v1:**
-- Full schema with closure-table maintenance triggers
-- Three queries fully implemented and benchmarked on seed data
-- Simple ingestion CLI (paste a transcript or import from a file — no live Claude Code integration)
-- Minimal frontend showing the branch DAG and cherry-pick flow
-- Agent = a stub that takes assembled context, calls an LLM, returns text
+```bash
+# Run DDL + seed data
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed/init.sql
+python3 db/seed/load_seed.py
+```
 
-**Skip for v1 (model in schema, don't build UI):**
-- Real-time collab
-- Branch templates
-- Auto-summarization (let the user paste a summary for now)
-- Most of the social layer (use Faker for those tables, don't build UI)
+This creates all 11 tables, the closure-table trigger, indexes, and loads the RecipeBox sample data (2 users, 1 conversation, 7 branches, 35 nodes).
 
-## Rubric mapping
+### 3. Start the backend
 
-| Requirement | Where it lands |
-|---|---|
-| Entities + critical scenarios | `docs/01_entities_and_scenarios.md` |
-| Domain description | `docs/02_domain_description.md` |
-| Schema in SQL/DBML | `docs/03_database_schema.md` + `db/schema.dbml` |
-| Schema image | dbdiagram.io render |
-| Fake valid data | `db/seed/data.json` + Faker for users/social |
-| 3 queries | `db/queries.sql` |
-| Indexes / optimization | Index list above + benchmarks |
-| **(1.5x tier)** Working MVP | Stub agent + minimal frontend |
-| **(1.5x tier)** Deployed app | Supabase + Render + Vercel |
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
 
-## Things to decide together
+Verify: `curl http://localhost:8000/health` should return `{"status":"ok"}`
 
-- Solo vs team-of-2 (affects how much frontend we attempt)
-- Going for 1x or 1.5x point tier
-- Whether the demo focuses on **cherry-pick** (most distinctive) or **branch divergence** (most visual) as the headline feature
+### 4. Start the frontend
 
-## Repository structure
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173**
+
+### 5. Use the app
+
+- **Home** (`/`) — lists conversations, create new ones
+- **Conversation** (`/conversations/:id`) — branch sidebar, message thread, send messages to the agent
+- **Search** (`/search`) — full-text search across all conversations, cherry-pick results into branches
+
+---
+
+## Running Tests
+
+```bash
+# Backend unit tests (needs running DB with seed data)
+cd backend && source venv/bin/activate && pytest -v
+
+# Phase 1 verification (models, routes, schemas — no DB needed)
+python tests/test_phase1.py
+
+# Phase 2 verification (ingestion tool, integration test infra — no DB needed)
+python tests/test_phase2.py
+
+# Frontend verification (components, api client, build — no DB needed)
+cd ../frontend && node tests/test_phase3.mjs
+
+# Integration tests (needs running backend + seeded DB)
+cd .. && python -m scripts.test_integration
+```
+
+## CLI Tools
+
+```bash
+# Ingest a plain-text transcript into a new conversation
+python -m scripts.ingest transcript.txt --user-id <UUID>
+
+# Input format:
+# User: How do I set up Postgres?
+# Assistant: First, install PostgreSQL...
+```
+
+---
+
+## API Endpoints
+
+### Conversations (DEV-A)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/conversations` | Create conversation (atomic: conv + branch + root node) |
+| GET | `/api/conversations?owner_id=` | List user's conversations |
+| GET | `/api/conversations/{id}` | Get conversation with branches |
+
+### Branches (DEV-A)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/conversations/{id}/branches` | Fork a new branch |
+| GET | `/api/branches/{id}` | Get branch details |
+| POST | `/api/branches/{id}/archive` | Archive a branch |
+| GET | `/api/nodes/{id}/context?budget=N` | Context assembly (Query 1) |
+
+### Agent (DEV-A)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/agent/turn` | Send message, get AI response |
+
+### Nodes (DEV-B)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/nodes` | Create a node |
+| GET | `/api/nodes/{id}` | Get a node |
+
+### Pins & Imports (DEV-B)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/branches/{id}/pins` | Pin a node to a branch |
+| GET | `/api/branches/{id}/pins` | List pins (ordered by priority) |
+| DELETE | `/api/pins/{id}` | Remove a pin |
+| POST | `/api/branches/{id}/imports` | Import (cherry-pick) a node |
+| GET | `/api/branches/{id}/imports` | List imports |
+| DELETE | `/api/imports/{id}` | Remove an import |
+
+### Search & Divergence (DEV-B)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/search?q=&user_id=&k=` | Full-text search (Query 3) |
+| GET | `/api/branches/{a}/diverge/{b}` | Branch divergence report (Query 2) |
+
+---
+
+## Repository Structure
 
 ```
 Graft/
 ├── README.md
-├── backend/                  # FastAPI + SQLAlchemy
-│   ├── main.py
-│   ├── db.py
-│   ├── llm.py                # Claude API client + stub fallback
-│   ├── schemas.py
-│   ├── models/{core,context}.py
-│   ├── routers/{conversations,branches,agent,nodes,context,search}.py
+├── .env.example
+├── render.yaml                    # Render Blueprint for backend deploy
+├── backend/
+│   ├── main.py                    # FastAPI app, mounts all 6 routers
+│   ├── db.py                      # SQLAlchemy engine + session
+│   ├── llm.py                     # Claude API client + stub fallback
+│   ├── schemas.py                 # Pydantic request/response models
+│   ├── requirements.txt
+│   ├── models/
+│   │   ├── core.py                # User, Conversation, Node, Branch
+│   │   └── context.py             # NodeAncestry, Pins, Imports, Summaries, Tags, Shares
+│   ├── routers/
+│   │   ├── conversations.py       # Conversation CRUD
+│   │   ├── branches.py            # Branch CRUD + context assembly (Query 1)
+│   │   ├── agent.py               # Agent turn (LLM integration)
+│   │   ├── nodes.py               # Node CRUD
+│   │   ├── context.py             # Pins + imports endpoints
+│   │   └── search.py              # FTS search (Query 3) + divergence (Query 2)
 │   └── tests/
-├── frontend/                 # React + Vite + Tailwind v4
-│   └── src/
-│       ├── api.js
-│       ├── App.jsx
-│       ├── pages/{ConversationList,ConversationView,SearchPage}.jsx
-│       └── components/{BranchSidebar,MessageThread,SendBox,PinsPanel,ImportModal,SearchResults}.jsx
+├── frontend/
+│   ├── src/
+│   │   ├── api.js                 # Shared API client (all endpoints)
+│   │   ├── App.jsx                # Router + nav shell
+│   │   ├── pages/
+│   │   │   ├── ConversationList.jsx
+│   │   │   ├── ConversationView.jsx
+│   │   │   └── SearchPage.jsx
+│   │   └── components/
+│   │       ├── BranchSidebar.jsx
+│   │       ├── MessageThread.jsx
+│   │       ├── SendBox.jsx
+│   │       ├── PinsPanel.jsx
+│   │       ├── ImportModal.jsx
+│   │       └── SearchResults.jsx
+│   └── tests/
+├── scripts/
+│   ├── ingest.py                  # CLI transcript ingestion
+│   └── test_integration.py        # Integration test suite
 ├── db/
-│   ├── schema.dbml
-│   ├── queries.sql
-│   └── seed/{init.sql,load_seed.py,data.json,relations.md}
-├── render.yaml               # Render Blueprint for backend deploy
+│   ├── schema.dbml                # dbdiagram.io schema
+│   ├── queries.sql                # 3 core queries
+│   └── seed/
+│       ├── init.sql               # DDL in execution order
+│       ├── load_seed.py           # Loads data.json with uuid5 mapping
+│       ├── data.json              # RecipeBox sample scenario
+│       └── relations.md           # Explains seed data relationships
 └── docs/
     ├── ROADMAP.md
     ├── 01_entities_and_scenarios.md
@@ -128,66 +240,36 @@ Graft/
     └── 03_database_schema.md
 ```
 
-## Running locally
+---
 
-Prereqs: Python 3.11+, Node 20+, a Postgres DB (Supabase free tier works — use the **Session pooler** URI to avoid IPv6 DNS issues).
+## Deployment
 
-```bash
-cp .env.example .env
-# Edit .env: paste DATABASE_URL (Supabase Session-pooler URI).
-# ANTHROPIC_API_KEY is optional — without it, the agent returns a stub reply.
+### Backend (Render)
+The repo includes `render.yaml` — connect the GitHub repo as a Render Blueprint. Set environment variables in the Render dashboard:
+- `DATABASE_URL` — Supabase connection string
+- `ANTHROPIC_API_KEY` — optional, falls back to stub
 
-# 1. Schema + seed (one-time)
-psql "$(grep ^DATABASE_URL .env | cut -d= -f2-)" -v ON_ERROR_STOP=1 -f db/seed/init.sql
-python3 db/seed/load_seed.py
+### Frontend (Vercel)
+1. Connect repo to Vercel
+2. Set root directory to `frontend`, framework to Vite
+3. Set `VITE_API_URL` to the Render backend URL (e.g. `https://graft-backend.onrender.com/api`)
+4. Deploy
 
-# 2. Backend (terminal 1)
-cd backend
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# 3. Frontend (terminal 2)
-cd frontend
-npm install
-npm run dev    # http://localhost:5173
-
-# 4. Tests
-cd backend && source venv/bin/activate && pytest -v
-```
-
-Open http://localhost:5173, click into a seed conversation, switch branches, send messages, search.
-
-## Deploying
-
-- **Backend**: connect this repo as a Render Blueprint (`render.yaml` auto-discovered). Set `DATABASE_URL` and optional `ANTHROPIC_API_KEY` in the Render dashboard.
-- **Frontend**: deployed by DEV-B on Vercel. Set `VITE_API_URL` to the Render URL of the backend.
+After deploying, add the Vercel URL to the backend's CORS `allow_origins` in `backend/main.py`.
 
 ---
 
-## Course project requirements
+## Index Strategy
 
-**Minimum requirements (X points max):**
-- Entities description, most critical scenarios description: common user paths
-- Domain description: what field you chose, answer the question "What should I know to reconstruct the database schema you presented using only this description?"
-- Database schema in SQL and DBML – code description / DDL (use e.g. https://dbdiagram.io/d for it)
-- Database schema image
-- Some fake (but valid in terms of db constraints) data in db (you can use Faker e.g.)
-- 3 queries to your db and SQLs to answer them
-- Indexes for columns that needed it / other db performance optimizations
-
-**Recommended requirements (1.5X points max):**
-- Everything from minimum requirements
-- Working MVP (at least locally, recorded demo) showing that data in db updates
-- Link to deployed fully-functional app with db, frontend and backend hosted in cloud
-
-**Advices on stack:**
-- Frontend: React
-- Backend: FastAPI (Python)
-- Database: Postgres
-- You can use any ORM library for your preferred language, e.g. for Python: sqlalchemy
-
-**Advices on deployment:**
-- Supabase for fast database hosting + auto backend APIs from db schema
-- And/Or Render, Heroku, PythonAnywhere to host stand alone python backend + db
-- Netlify, Vercel, or GitHub Pages for deploying frontend
+| Index | Type | Serves |
+|-------|------|--------|
+| `(ancestor_id, descendant_id)` PK | B-tree | Closure table lookups |
+| `(descendant_id, depth)` | B-tree | "All ancestors of X" (Q1, Q2) |
+| `content_tsv` | GIN | Full-text search (Q3) |
+| `(conversation_id, created_at DESC)` | B-tree | Recent messages |
+| `(branch_id, priority DESC)` | B-tree | Ordered pin retrieval (Q1) |
+| `(target_branch_id, imported_at DESC)` | B-tree | Import listing (Q1) |
+| `conversation_id WHERE is_archived=false` | Partial B-tree | Active branch filtering (Q3) |
+| `(owner_id, updated_at DESC)` | B-tree | "My recent conversations" |
+| `(conversation_id, name)` UNIQUE | B-tree | Branch name uniqueness |
+| `summarized_node_id` | B-tree | Elision check (Q1) |
