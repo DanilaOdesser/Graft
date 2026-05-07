@@ -48,6 +48,9 @@ yarn-error.log*
 *.swp
 *.swo
 
+# Claude
+.claude/
+
 # Misc
 *.pem
 .vercel
