@@ -11,7 +11,8 @@ export default function ConversationList() {
 
   useEffect(() => {
     api.getConversations(DEFAULT_USER_ID)
-      .then(setItems)
+      .then((data) => setItems(Array.isArray(data) ? data : []))
+      .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, []);
 
@@ -20,10 +21,7 @@ export default function ConversationList() {
     if (!title.trim()) return;
     setCreating(true);
     try {
-      const conv = await api.createConversation({
-        title: title.trim(),
-        owner_id: DEFAULT_USER_ID,
-      });
+      const conv = await api.createConversation({ title: title.trim(), owner_id: DEFAULT_USER_ID });
       navigate(`/conversations/${conv.id}`);
     } finally {
       setCreating(false);
@@ -31,44 +29,54 @@ export default function ConversationList() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">Conversations</h1>
+    <div className="max-w-2xl mx-auto w-full px-4 py-8 animate-in">
+      <div className="mb-6">
+        <h1 className="font-[family-name:var(--font-display)] text-xl font-bold text-[var(--color-text)]">Conversations</h1>
+        <p className="text-[13px] text-[var(--color-text-faint)] mt-0.5">Your agent conversation workspaces</p>
+      </div>
 
       <form onSubmit={handleCreate} className="flex gap-2 mb-6">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="New conversation title…"
-          className="flex-1 border rounded px-3 py-2"
+          placeholder="New conversation title..."
+          className="flex-1 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-sm placeholder:text-[var(--color-text-faint)] focus:outline-none focus:border-[var(--color-blue)] focus:ring-2 focus:ring-[var(--color-blue-ring)] transition-all"
         />
         <button
           disabled={creating || !title.trim()}
-          className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-[var(--color-blue)] text-white text-sm font-medium hover:brightness-95 disabled:opacity-40 transition-all"
         >
-          {creating ? "Creating…" : "Create"}
+          {creating ? "Creating..." : "Create"}
         </button>
       </form>
 
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <div className="text-center py-16 text-[var(--color-text-faint)] text-sm">Loading...</div>
       ) : items.length === 0 ? (
-        <p className="text-gray-500">No conversations yet.</p>
+        <div className="text-center py-16 border border-dashed border-[var(--color-border)] rounded-xl">
+          <p className="text-[var(--color-text-faint)] text-sm">No conversations yet</p>
+          <p className="text-[var(--color-text-faint)] text-xs mt-1">Create one above to get started</p>
+        </div>
       ) : (
-        <ul className="divide-y border rounded bg-white">
-          {items.map((c) => (
-            <li key={c.id}>
-              <Link
-                to={`/conversations/${c.id}`}
-                className="block px-4 py-3 hover:bg-gray-50"
-              >
-                <div className="font-medium">{c.title}</div>
-                <div className="text-xs text-gray-500">
+        <div className="border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface)] stagger">
+          {items.map((c, i) => (
+            <Link
+              key={c.id}
+              to={`/conversations/${c.id}`}
+              className={`flex items-center justify-between px-4 py-3 hover:bg-[var(--color-surface-2)] transition-colors ${i > 0 ? "border-t border-[var(--color-border)]" : ""}`}
+            >
+              <div>
+                <div className="text-sm font-medium text-[var(--color-text)]">{c.title}</div>
+                <div className="text-[11px] text-[var(--color-text-faint)] mt-0.5">
                   Updated {new Date(c.updated_at).toLocaleString()}
                 </div>
-              </Link>
-            </li>
+              </div>
+              <svg className="w-4 h-4 text-[var(--color-text-faint)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
