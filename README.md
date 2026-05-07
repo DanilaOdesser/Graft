@@ -102,3 +102,32 @@ Each index has a query that justifies it. That's the angle for the "indexes / pe
 - `schema.dbml` — full schema, paste into dbdiagram.io to visualize
 - `queries.sql` — the three core queries with comments
 - `README.md` — this file
+
+---
+
+## Course project requirements
+
+**Minimum requirements (X points max):**
+- Entities description, most critical scenarios description: common user paths
+- Domain description: what field you chose, answer the question "What should I know to reconstruct the database schema you presented using only this description?"
+- Database schema in SQL and DBML – code description / DDL (use e.g. https://dbdiagram.io/d for it)
+- Database schema image
+- Some fake (but valid in terms of db constraints) data in db (you can use Faker e.g.)
+- 3 queries to your db and SQLs to answer them
+- Indexes for columns that needed it / other db performance optimizations
+
+**Recommended requirements (1.5X points max):**
+- Everything from minimum requirements
+- Working MVP (at least locally, recorded demo) showing that data in db updates
+- Link to deployed fully-functional app with db, frontend and backend hosted in cloud
+
+**Advices on stack:**
+- Frontend: React
+- Backend: FastAPI (Python)
+- Database: Postgres
+- You can use any ORM library for your preferred language, e.g. for Python: sqlalchemy
+
+**Advices on deployment:**
+- Supabase for fast database hosting + auto backend APIs from db schema
+- And/Or Render, Heroku, PythonAnywhere to host stand alone python backend + db
+- Netlify, Vercel, or GitHub Pages for deploying frontend
