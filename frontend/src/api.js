@@ -23,6 +23,8 @@ export const api = {
     request(`/branches/${id}`),
   createBranch: (convId, data) =>
     request(`/conversations/${convId}/branches`, { method: "POST", body: JSON.stringify(data) }),
+  archiveBranch: (id) =>
+    request(`/branches/${id}/archive`, { method: "POST" }),
   getContext: (nodeId, budget) =>
     request(`/nodes/${nodeId}/context?budget=${budget}`),
   agentTurn: (data) =>
