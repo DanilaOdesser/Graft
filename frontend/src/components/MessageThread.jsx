@@ -30,6 +30,7 @@ export default function MessageThread({ nodes, onPin, onImport }) {
           </div>
         </div>
       ))}
+      <div ref={bottomRef} />
     </div>
   );
 }

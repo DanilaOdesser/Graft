@@ -64,6 +64,7 @@ class ContextNode(BaseModel):
 
 class AgentTurnRequest(BaseModel):
     node_id: uuid.UUID
+    branch_id: uuid.UUID
     user_message: str = Field(min_length=1)
     budget: int = Field(default=4096, ge=128, le=200_000)
 
