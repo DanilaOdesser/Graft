@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, DEFAULT_USER_ID } from "../api";
 import BranchSidebar from "../components/BranchSidebar";
@@ -140,6 +140,11 @@ export default function ConversationView() {
     if (selected?.id === branchId) setSelected(branches[0] || null);
   };
 
+  const isHeadSummary = useMemo(
+    () => allNodes.find((n) => n.id === selected?.head_node_id)?.node_type === "summary",
+    [allNodes, selected]
+  );
+
   const handleTurnComplete = () => {
     refreshContext();   // still needed for thread view; SSE handles branch/node state
   };
@@ -248,6 +253,7 @@ export default function ConversationView() {
                   branchId={selected?.id}
                   conversationId={id}
                   onTurnComplete={handleTurnComplete}
+                  isHeadSummary={isHeadSummary}
                 />
               </>
             ) : (
