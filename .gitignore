@@ -1,1 +1,53 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python / FastAPI / SQLAlchemy
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+*.sqlite
+*.db
+
+# Node / React
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Supabase
+.supabase/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+*.pem
+.vercel
