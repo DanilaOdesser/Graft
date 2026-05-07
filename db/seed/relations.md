@@ -1,6 +1,6 @@
 # Sample Data Relations Guide
 
-This document explains the relationships in `sample_data.json` and demonstrates how each Graft feature works within a realistic scenario.
+This document explains the relationships in `data.json` and demonstrates how each Graft feature works within a realistic scenario.
 
 ---
 

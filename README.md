@@ -32,7 +32,7 @@ Long agent conversations get bloated. You want to try something speculative with
 | `node_summaries` | Maps a summary node to the nodes it replaces |
 | `tags`, `node_tags`, `branch_shares` | Social/organization layer (Faker fodder) |
 
-Full DBML is in `schema.dbml`.
+Full DBML is in `db/schema.dbml`.
 
 ## The three core queries
 
@@ -42,7 +42,7 @@ Full DBML is in `schema.dbml`.
 
 3. **Full-text search across all conversations** — user enters a natural-language query; Postgres full-text search (`tsvector` + `websearch_to_tsquery`) ranks matches by relevance and returns them with their branch/conversation context for cherry-picking.
 
-Full SQL in `queries.sql`.
+Full SQL in `db/queries.sql`.
 
 ## Indexes worth talking about in the write-up
 
@@ -81,12 +81,12 @@ Each index has a query that justifies it. That's the angle for the "indexes / pe
 
 | Requirement | Where it lands |
 |---|---|
-| Entities + critical scenarios | This doc + a longer write-up |
-| Domain description | "What we're building" + "Core mental model" |
-| Schema in SQL/DBML | `schema.dbml` → DDL |
+| Entities + critical scenarios | `docs/01_entities_and_scenarios.md` |
+| Domain description | `docs/02_domain_description.md` |
+| Schema in SQL/DBML | `docs/03_database_schema.md` + `db/schema.dbml` |
 | Schema image | dbdiagram.io render |
-| Fake valid data | Ingestion script + Faker for users/social |
-| 3 queries | Three queries in `queries.sql` |
+| Fake valid data | `db/seed/data.json` + Faker for users/social |
+| 3 queries | `db/queries.sql` |
 | Indexes / optimization | Index list above + benchmarks |
 | **(1.5x tier)** Working MVP | Stub agent + minimal frontend |
 | **(1.5x tier)** Deployed app | Supabase + Render + Vercel |
@@ -97,11 +97,25 @@ Each index has a query that justifies it. That's the angle for the "indexes / pe
 - Going for 1x or 1.5x point tier
 - Whether the demo focuses on **cherry-pick** (most distinctive) or **branch divergence** (most visual) as the headline feature
 
-## Files in the repo so far
+## Repository structure
 
-- `schema.dbml` — full schema, paste into dbdiagram.io to visualize
-- `queries.sql` — the three core queries with comments
-- `README.md` — this file
+```
+Graft/
+├── README.md
+├── backend/
+│   └── main.py               # FastAPI entry point (stub)
+├── db/
+│   ├── schema.dbml            # Full schema for dbdiagram.io
+│   ├── queries.sql            # Three core queries with comments
+│   └── seed/
+│       ├── data.json          # Sample data (valid against schema)
+│       └── relations.md       # Explains relationships in sample data
+└── docs/
+    ├── ROADMAP.md             # 15-day implementation plan
+    ├── 01_entities_and_scenarios.md
+    ├── 02_domain_description.md
+    └── 03_database_schema.md  # SQL DDL + DBML + index justifications
+```
 
 ---
 
