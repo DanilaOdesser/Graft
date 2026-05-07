@@ -1,0 +1,6 @@
+User: How do I set up a Postgres database for my Python project?
+Assistant: First, install PostgreSQL using your package manager. On macOS you can use brew install postgresql. Then create a database with createdb myproject. For Python, install psycopg2-binary and SQLAlchemy to connect.
+User: What about indexing strategies?
+Assistant: PostgreSQL supports several index types. B-tree is the default and works for most equality and range queries. GIN indexes are great for full-text search and array containment. Consider adding indexes on columns used in WHERE, JOIN, and ORDER BY clauses.
+User: How do I add full-text search?
+Assistant: Add a tsvector generated column to your table, create a GIN index on it, then query with websearch_to_tsquery and the @@ operator. This gives you stemming, ranking, and Google-style query syntax for free.
