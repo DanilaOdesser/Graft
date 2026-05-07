@@ -40,9 +40,11 @@ export default function MessageThread({ nodes, onPin, onImport }) {
 
   if (!ordered.length) return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">Select a branch to see messages</div>;
 
+  const reversed = [...nodes].reverse();
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 stagger">
-      {ordered.map((n, i) => (
+      {reversed.map((n, i) => (
         <div key={n.id || i} className="group rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 hover:border-[var(--color-border-bright)] transition-colors">
           <div className="flex items-center gap-1.5 mb-1.5">
             <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${roleBadge(n.role || n.node_type)}`}>{n.role || n.node_type}</span>

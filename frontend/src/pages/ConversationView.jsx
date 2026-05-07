@@ -46,11 +46,13 @@ export default function ConversationView() {
   useEffect(() => { refreshContext(); }, [refreshContext]);
 
   // Fetch ALL nodes for the conversation (for graph view — needs parent_id + branch_id)
-  useEffect(() => {
+  const refreshAllNodes = useCallback(() => {
     api.getConversationNodes(id)
       .then((data) => setAllNodes(Array.isArray(data) ? data : []))
       .catch(() => setAllNodes([]));
   }, [id]);
+
+  useEffect(() => { refreshAllNodes(); }, [refreshAllNodes]);
 
   // Imports
   const refreshImports = useCallback(() => {
@@ -136,7 +138,7 @@ export default function ConversationView() {
             {["thread", "graph"].map((t) => (
               <button
                 key={t}
-                onClick={() => { setTab(t); setSelectedGraphNode(null); }}
+                onClick={() => { setTab(t); setSelectedGraphNode(null); if (t === "graph") refreshAllNodes(); }}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   tab === t
                     ? "bg-[var(--color-blue-dim)] text-[var(--color-blue)]"
