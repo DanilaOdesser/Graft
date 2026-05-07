@@ -14,8 +14,8 @@ import {
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 
-const NODE_W = 180;
-const NODE_H = 52;
+const NODE_W = 172;
+const NODE_H = 48;
 
 const branchPalette = [
   { main: "#2563eb", light: "#eff6ff", ring: "#bfdbfe" },
@@ -39,14 +39,7 @@ function getColorForBranch(branchId, branchList) {
 
 function buildTreeLayout(rawNodes, edges) {
   const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({
-    rankdir: "TB",
-    nodesep: 30,
-    ranksep: 65,
-    marginx: 30,
-    marginy: 30,
-    align: "UL",
-  });
+  g.setGraph({ rankdir: "TB", nodesep: 24, ranksep: 55, marginx: 20, marginy: 20 });
   rawNodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
@@ -55,8 +48,6 @@ function buildTreeLayout(rawNodes, edges) {
     return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } };
   });
 }
-
-/* ── Custom Node ───────────────────────────────────────────── */
 
 function GraphNode({ data, selected }) {
   const c = data._colors;
@@ -67,18 +58,16 @@ function GraphNode({ data, selected }) {
     <>
       <Handle type="target" position={Position.Top} className="!w-1.5 !h-1.5 !border-0" style={{ background: c.main }} />
 
-      {/* Hover tooltip */}
-      <NodeToolbar isVisible={data._hovered} position={Position.Right} offset={12}>
-        <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3.5 max-w-[300px] text-left pointer-events-none">
-          <div className="flex items-center gap-1.5 mb-2">
+      <NodeToolbar isVisible={data._hovered} position={Position.Right} offset={10}>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 max-w-[280px] text-left pointer-events-none">
+          <div className="flex items-center gap-1.5 mb-1.5">
             <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white" style={{ background: c.main }}>
               {data.role || data.node_type}
             </span>
             <span className="text-[9px] font-mono text-gray-400">{data._branchName}</span>
-            {isHead && <span className="text-[8px] font-bold px-1 py-0.5 rounded text-white" style={{ background: c.main }}>HEAD</span>}
           </div>
           <p className="text-[11px] text-gray-600 leading-relaxed whitespace-pre-wrap">
-            {data.content?.slice(0, 300)}{data.content?.length > 300 ? "..." : ""}
+            {data.content?.slice(0, 280)}{data.content?.length > 280 ? "..." : ""}
           </p>
           <div className="flex gap-3 mt-2 text-[9px] text-gray-400">
             <span>{data.token_count} tok</span>
@@ -87,38 +76,29 @@ function GraphNode({ data, selected }) {
         </div>
       </NodeToolbar>
 
-      {/* Node body */}
       <div
-        className="rounded-lg border-2 px-2.5 py-1.5 text-left cursor-pointer transition-all duration-150"
+        className="rounded-lg border-2 px-2 py-1.5 text-left cursor-pointer transition-all duration-150"
         style={{
           width: NODE_W,
           background: selected ? c.light : "white",
           borderColor: selected ? c.main : `${c.main}25`,
           boxShadow: selected
             ? `0 0 0 3px ${c.ring}`
-            : isHead
-            ? `0 2px 8px ${c.main}18`
-            : "0 1px 3px rgba(0,0,0,0.04)",
+            : isHead ? `0 2px 8px ${c.main}20` : "0 1px 3px rgba(0,0,0,0.04)",
         }}
       >
-        <div className="flex items-center gap-2">
-          {/* Icon circle */}
-          <div
-            className="w-7 h-7 rounded-md flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-            style={{ background: c.main }}
-          >
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: c.main }}>
             {icon}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1">
-              <span className="text-[10px] font-semibold text-gray-700 truncate">{data._label}</span>
+              <span className="text-[9px] font-semibold text-gray-700 truncate">{data._label}</span>
               {isHead && (
-                <span className="text-[7px] font-bold uppercase px-1 rounded text-white shrink-0" style={{ background: c.main }}>
-                  HEAD
-                </span>
+                <span className="text-[7px] font-bold uppercase px-0.5 rounded text-white shrink-0" style={{ background: c.main }}>HD</span>
               )}
             </div>
-            <span className="text-[9px] text-gray-400 font-mono">{data._branchName}</span>
+            <span className="text-[8px] text-gray-400 font-mono">{data._branchName}</span>
           </div>
         </div>
       </div>
@@ -129,8 +109,6 @@ function GraphNode({ data, selected }) {
 }
 
 const nodeTypes = { graphNode: GraphNode };
-
-/* ── Main Component ────────────────────────────────────────── */
 
 export default function ConversationGraph({ allNodes, branches, onNodeSelect, selectedNodeId }) {
   const [hoveredNode, setHoveredNode] = useState(null);
@@ -149,25 +127,25 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
   const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
     if (!allNodes?.length) return { nodes: [], edges: [] };
 
-    const nodeMap = new Map();
-    const edges = [];
+    // PASS 1: Build ALL nodes first (keyed by id)
+    const nodeDataMap = new Map();
+    allNodes.forEach((n) => {
+      if (nodeDataMap.has(n.id)) return;
+      nodeDataMap.set(n.id, n);
+    });
 
-    // Sort by created_at so the tree builds in order
-    const sorted = [...allNodes].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    sorted.forEach((n) => {
-      if (nodeMap.has(n.id)) return;
-
+    // PASS 2: Build flow nodes
+    const flowNodeList = [];
+    nodeDataMap.forEach((n) => {
       const br = branchMap.get(n.branch_id);
       const branchName = br?.name || "?";
       const colors = getColorForBranch(n.branch_id, branches);
       const isHead = headNodeIds.has(n.id);
 
-      // Short label from content
-      const words = (n.content || "").split(/\s+/).slice(0, 4).join(" ");
-      const label = words.length > 30 ? words.slice(0, 30) + "..." : words;
+      const words = (n.content || "").split(/\s+/).slice(0, 5).join(" ");
+      const label = words.length > 28 ? words.slice(0, 28) + "..." : words;
 
-      nodeMap.set(n.id, {
+      flowNodeList.push({
         id: n.id,
         type: "graphNode",
         data: {
@@ -180,43 +158,46 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
         },
         position: { x: 0, y: 0 },
       });
-
-      // Edge to parent — this is what builds the TREE
-      if (n.parent_id && nodeMap.has(n.parent_id)) {
-        const parentBranchId = sorted.find((p) => p.id === n.parent_id)?.branch_id;
-        const isFork = parentBranchId && parentBranchId !== n.branch_id;
-
-        edges.push({
-          id: `e-${n.parent_id}-${n.id}`,
-          source: n.parent_id,
-          target: n.id,
-          type: "smoothstep",
-          animated: isFork,
-          style: {
-            stroke: colors.main,
-            strokeWidth: isFork ? 1.5 : 2,
-            strokeDasharray: isFork ? "6 4" : undefined,
-            opacity: 0.7,
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 8,
-            height: 8,
-            color: colors.main,
-          },
-        });
-      }
     });
 
-    const rawNodes = Array.from(nodeMap.values());
-    const laidOut = buildTreeLayout(rawNodes, edges);
+    // PASS 3: Build edges (now ALL nodes exist in the map)
+    const edges = [];
+    nodeDataMap.forEach((n) => {
+      if (!n.parent_id) return;
+      if (!nodeDataMap.has(n.parent_id)) return;
+
+      const parent = nodeDataMap.get(n.parent_id);
+      const isFork = parent.branch_id !== n.branch_id;
+      const colors = getColorForBranch(n.branch_id, branches);
+
+      edges.push({
+        id: `e-${n.parent_id}-${n.id}`,
+        source: n.parent_id,
+        target: n.id,
+        type: "smoothstep",
+        animated: isFork,
+        style: {
+          stroke: colors.main,
+          strokeWidth: isFork ? 1.5 : 2,
+          strokeDasharray: isFork ? "6 4" : undefined,
+          opacity: 0.75,
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 8,
+          height: 8,
+          color: colors.main,
+        },
+      });
+    });
+
+    const laidOut = buildTreeLayout(flowNodeList, edges);
     return { nodes: laidOut, edges };
   }, [allNodes, branchMap, branches, headNodeIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, , onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync layout + hover + selection
   useEffect(() => {
     setNodes(
       flowNodes.map((n) => ({
@@ -227,25 +208,17 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
     );
   }, [flowNodes, selectedNodeId, hoveredNode, setNodes]);
 
-  const handleNodeClick = useCallback((_, node) => {
-    onNodeSelect?.(node.data);
-  }, [onNodeSelect]);
-
+  const handleNodeClick = useCallback((_, node) => onNodeSelect?.(node.data), [onNodeSelect]);
   const handleMouseEnter = useCallback((_, node) => setHoveredNode(node.id), []);
   const handleMouseLeave = useCallback(() => setHoveredNode(null), []);
-
   const minimapColor = useCallback((node) => node.data?._colors?.main || "#d4d4d4", []);
 
   if (!allNodes?.length) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">
-        No nodes to display
-      </div>
-    );
+    return <div className="flex-1 flex items-center justify-center text-[var(--color-text-faint)] text-sm">No nodes to display</div>;
   }
 
   return (
-    <div className="flex-1 bg-[var(--color-bg)] overflow-hidden">
+    <div className="flex-1 bg-[var(--color-bg)] overflow-hidden relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -262,28 +235,18 @@ export default function ConversationGraph({ allNodes, branches, onNodeSelect, se
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#e5e5e5" gap={20} size={1} />
-        <Controls
-          showInteractive={false}
-          className="!bg-white !border-[var(--color-border)] !shadow-sm !rounded-lg"
-        />
-        <MiniMap
-          nodeColor={minimapColor}
-          nodeStrokeWidth={2}
-          pannable
-          zoomable
+        <Controls showInteractive={false} className="!bg-white !border-[var(--color-border)] !shadow-sm !rounded-lg" />
+        <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} pannable zoomable
           className="!bg-white/90 !border-[var(--color-border)] !shadow-sm !rounded-lg"
-          style={{ width: 160, height: 110 }}
-        />
+          style={{ width: 140, height: 90 }} />
       </ReactFlow>
-
-      {/* Branch legend */}
-      <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur border border-[var(--color-border)] rounded-lg px-3 py-2 flex flex-wrap gap-x-3 gap-y-1 max-w-xs">
+      <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 flex flex-wrap gap-x-3 gap-y-1 max-w-xs">
         {branches.map((b) => {
           const c = getColorForBranch(b.id, branches);
           return (
-            <div key={b.id} className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ background: c.main }} />
-              <span className="text-[10px] text-gray-600 font-medium">{b.name}</span>
+            <div key={b.id} className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-sm" style={{ background: c.main }} />
+              <span className="text-[9px] text-gray-600 font-medium">{b.name}</span>
             </div>
           );
         })}
