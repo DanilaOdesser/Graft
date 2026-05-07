@@ -31,7 +31,9 @@ def call_llm(context_nodes: list[dict]) -> str:
     # without a key don't need the package configured.
     from anthropic import Anthropic
 
-    client = Anthropic(api_key=api_key)
+    # Pin the base URL so a shell-exported ANTHROPIC_BASE_URL (e.g. a corp
+    # LiteLLM proxy) doesn't redirect the request and reject our key.
+    client = Anthropic(api_key=api_key, base_url="https://api.anthropic.com")
     system_chunks = [n["content"] for n in context_nodes if n.get("role") == "system"]
     messages: list[dict] = [
         {"role": n["role"], "content": n["content"]}
