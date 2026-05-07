@@ -45,32 +45,12 @@ export default function ConversationView() {
 
   useEffect(() => { refreshContext(); }, [refreshContext]);
 
-  // Fetch ALL nodes across ALL branches for the graph view
+  // Fetch ALL nodes for the conversation (for graph view — needs parent_id + branch_id)
   useEffect(() => {
-    if (branches.length === 0) return;
-    const fetchAll = async () => {
-      const seenIds = new Set();
-      const merged = [];
-      // Fetch context from each branch head with a large budget to get all nodes
-      const promises = branches.map((b) =>
-        b.head_node_id
-          ? api.getContext(b.head_node_id, 999999).catch(() => [])
-          : Promise.resolve([])
-      );
-      const results = await Promise.all(promises);
-      results.forEach((nodes) => {
-        const arr = Array.isArray(nodes) ? nodes : nodes?.nodes || [];
-        arr.forEach((n) => {
-          if (!seenIds.has(n.id)) {
-            seenIds.add(n.id);
-            merged.push(n);
-          }
-        });
-      });
-      setAllNodes(merged);
-    };
-    fetchAll();
-  }, [branches]);
+    api.getConversationNodes(id)
+      .then((data) => setAllNodes(Array.isArray(data) ? data : []))
+      .catch(() => setAllNodes([]));
+  }, [id]);
 
   // Imports
   const refreshImports = useCallback(() => {
