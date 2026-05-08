@@ -49,11 +49,21 @@ export default function MessageThread({ nodes, onPin, onImport }) {
             {n.source && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceBadge(n.source)}`}>{n.source}</span>}
             <span className="ml-auto text-[10px] font-[family-name:var(--font-mono)] text-[var(--color-text-faint)]">{n.token_count}tok</span>
           </div>
-          <p className="text-sm text-[var(--color-text-dim)] leading-relaxed whitespace-pre-wrap">{n.content}</p>
-          <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            {onPin && <button onClick={() => onPin(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-amber)] px-2 py-0.5 rounded hover:bg-[var(--color-amber-dim)] transition-colors">Pin</button>}
-            {onImport && <button onClick={() => onImport(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-emerald)] px-2 py-0.5 rounded hover:bg-[var(--color-emerald-dim)] transition-colors">Import to...</button>}
-          </div>
+          {n._loading ? (
+            <div className="flex gap-1 items-center py-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-faint)] animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-faint)] animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-text-faint)] animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--color-text-dim)] leading-relaxed whitespace-pre-wrap">{n.content}</p>
+          )}
+          {!n._loading && (
+            <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              {onPin && <button onClick={() => onPin(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-amber)] px-2 py-0.5 rounded hover:bg-[var(--color-amber-dim)] transition-colors">Pin</button>}
+              {onImport && <button onClick={() => onImport(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-emerald)] px-2 py-0.5 rounded hover:bg-[var(--color-emerald-dim)] transition-colors">Import to...</button>}
+            </div>
+          )}
         </div>
       ))}
       <div ref={bottomRef} />
