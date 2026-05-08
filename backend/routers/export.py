@@ -341,10 +341,16 @@ def export_to_claude_code(
     # live in the preamble.
     chat_rows = [r for r in rows if r["role"] in ("user", "assistant")]
     if not chat_rows:
-        raise HTTPException(
-            status_code=400,
-            detail="branch has no user/assistant messages yet — nothing to export",
-        )
+        # Branch HEAD is a commit node with no uncommitted messages.  The full
+        # history is already in the preamble as [Committed context] blocks.
+        # Synthesize a minimal user turn so the JSONL is valid (CC requires the
+        # first entry to be a user message).
+        if not system_chunks:
+            raise HTTPException(
+                status_code=400,
+                detail="branch has no content to export",
+            )
+        chat_rows = [{"role": "user", "content": "(continuing from committed Graft history — see context above)"}]
 
     # Claude Code requires the first message to be `user`. If our chain
     # starts with `assistant` (shouldn't happen for normal seed flows but is
