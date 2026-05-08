@@ -22,12 +22,26 @@ from llm import call_llm
 from models.core import Branch, Node
 from routers.branches import QUERY_1_CONTEXT_ASSEMBLY
 from schemas import AgentTurnRequest
+from sse import publish
 
 router = APIRouter()
 
 
 def _token_count(content: str) -> int:
     return int(len(content.split()) * 1.3)
+
+
+def _branch_to_dict(b: Branch) -> dict:
+    return {
+        "id": str(b.id),
+        "conversation_id": str(b.conversation_id),
+        "name": b.name,
+        "head_node_id": str(b.head_node_id) if b.head_node_id else None,
+        "base_node_id": str(b.base_node_id) if b.base_node_id else None,
+        "created_by": str(b.created_by),
+        "is_archived": b.is_archived,
+        "created_at": str(b.created_at),
+    }
 
 
 def _node_to_dict(n: Node) -> dict:
@@ -45,7 +59,7 @@ def _node_to_dict(n: Node) -> dict:
 
 
 @router.post("/agent/turn")
-def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
+async def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
     parent = db.query(Node).filter(Node.id == body.node_id).first()
     if not parent:
         raise HTTPException(status_code=404, detail="parent node_id not found")
@@ -90,17 +104,20 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         }
         for r in rows
     ]
-    # Augment rows with role by re-fetching (small N, cheap).
+    # Augment rows with role + node_type by re-fetching (small N, cheap).
     if context_nodes:
         ids = [r["id"] for r in context_nodes]
-        roles = dict(
-            db.execute(
-                text("SELECT CAST(id AS text), role FROM nodes WHERE id = ANY(CAST(:ids AS uuid[]))"),
+        meta = {
+            row["id"]: row
+            for row in db.execute(
+                text("SELECT CAST(id AS text) AS id, role, node_type FROM nodes WHERE id = ANY(CAST(:ids AS uuid[]))"),
                 {"ids": ids},
-            ).fetchall()
-        )
+            ).mappings().fetchall()
+        }
         for n in context_nodes:
-            n["role"] = roles.get(n["id"])
+            m = meta.get(n["id"], {})
+            n["role"] = m.get("role")
+            n["node_type"] = m.get("node_type")
 
     # 3. Build the LLM messages list. Query 1 returns rows in *rank* order
     # (pins, then ancestors newest-first, then imports), but Anthropic needs
@@ -142,6 +159,10 @@ def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user_node)
     db.refresh(assistant_node)
+    db.refresh(branch)
+    await publish(str(parent.conversation_id), "node_created", {"node": _node_to_dict(user_node)})
+    await publish(str(parent.conversation_id), "node_created", {"node": _node_to_dict(assistant_node)})
+    await publish(str(parent.conversation_id), "branch_updated", {"branch": _branch_to_dict(branch)})
 
     return {
         "user_node": _node_to_dict(user_node),

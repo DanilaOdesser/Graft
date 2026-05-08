@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { api } from "../api";
 
-export default function BranchSidebar({ branches, selected, onSelect, onCreate, onArchive }) {
+export default function BranchSidebar({ branches, selected, onSelect, onCreate, onArchive, isHeadSummary, onCommit }) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [commitMsg, setCommitMsg] = useState("");
+  const [committing, setCommitting] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -10,6 +13,17 @@ export default function BranchSidebar({ branches, selected, onSelect, onCreate, 
     onCreate(name.trim());
     setName("");
     setShowForm(false);
+  };
+
+  const handleCommit = async () => {
+    if (!commitMsg.trim() || !selected?.id) return;
+    setCommitting(true);
+    try {
+      await api.commitBranch(selected.id, { commit_message: commitMsg.trim() });
+      setCommitMsg("");
+      onCommit?.();
+    } catch (err) { console.error("Commit failed:", err); }
+    setCommitting(false);
   };
 
   return (
@@ -53,6 +67,27 @@ export default function BranchSidebar({ branches, selected, onSelect, onCreate, 
             )}
           </div>
         ))}
+      </div>
+
+      {/* Commit section */}
+      <div className="border-t border-[var(--color-border)] p-2 space-y-1.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-faint)] px-1">Commit</div>
+        <input
+          value={commitMsg}
+          onChange={(e) => setCommitMsg(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleCommit()}
+          placeholder={isHeadSummary ? "Nothing to commit" : "Commit message..."}
+          disabled={!selected?.id || committing || isHeadSummary}
+          className="w-full px-2 py-1.5 rounded border border-[var(--color-border)] text-xs placeholder:text-[var(--color-text-faint)] focus:outline-none focus:border-[#d97706] focus:ring-1 focus:ring-[#fde68a] disabled:opacity-50 transition-all"
+        />
+        <button
+          onClick={handleCommit}
+          disabled={!selected?.id || !commitMsg.trim() || committing || isHeadSummary}
+          title={isHeadSummary ? "Nothing to commit — HEAD is already a commit node" : "Commit recent messages"}
+          className="w-full py-1.5 rounded text-[10px] font-medium bg-[#d97706] text-white hover:brightness-95 disabled:opacity-40 transition-all"
+        >
+          {committing ? "Committing..." : "Commit"}
+        </button>
       </div>
     </div>
   );

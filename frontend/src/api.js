@@ -57,4 +57,8 @@ export const api = {
     request(`/branches/${branchId}/imports`),
   deleteImport: (importId) =>
     request(`/imports/${importId}`, { method: "DELETE" }),
+  commitBranch: (branchId, data) =>
+    request(`/branches/${branchId}/commit`, { method: "POST", body: JSON.stringify(data) }),
+  summarizeNode: (nodeId, data) =>
+    request(`/nodes/${nodeId}/summarize`, { method: "POST", body: JSON.stringify(data) }),
 };

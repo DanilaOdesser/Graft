@@ -10,7 +10,9 @@ import {
   Handle,
   Position,
   NodeToolbar,
+  useReactFlow,
 } from "@xyflow/react";
+import { api } from "../api";
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 
@@ -101,7 +103,9 @@ function GraphNode({ data, selected }) {
           borderColor: selected ? c.main : isPinned ? PIN_COLOR : `${c.main}25`,
           boxShadow: selected
             ? `0 0 0 3px ${c.ring}`
-            : isHead ? `0 2px 8px ${c.main}20` : "0 1px 3px rgba(0,0,0,0.04)",
+            : isHead
+            ? `0 2px 8px ${c.main}20`
+            : "0 1px 3px rgba(0,0,0,0.04)",
           outline: isImportSource ? `2px dashed ${IMPORT_COLOR}40` : undefined,
           outlineOffset: "2px",
         }}
@@ -133,9 +137,71 @@ function GraphNode({ data, selected }) {
   );
 }
 
+function SearchOverlay({ conversationId, userId, onNodeSelect }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); setOpen(false); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.search(query, userId, 20);
+        const rows = Array.isArray(data) ? data : [];
+        const filtered = rows.filter((r) => r.conversation_id === conversationId);
+        setResults(filtered.slice(0, 8));
+        setOpen(true);
+      } catch { setResults([]); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, conversationId, userId]);
+
+  const handleSelect = (r) => {
+    onNodeSelect({ id: r.node_id, ...r });
+    fitView({ nodes: [{ id: r.node_id }], padding: 0.4, duration: 300 });
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div className="absolute top-3 right-3 z-10 w-64">
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setQuery(""))}
+        placeholder="Search nodes\u2026"
+        className="w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-white shadow-sm focus:outline-none focus:border-[var(--color-blue)] focus:ring-1 focus:ring-[var(--color-blue-ring)]"
+      />
+      {open && (
+        <div className="mt-1 bg-white border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          {results.length === 0 ? (
+            <div className="px-3 py-2 text-[11px] text-gray-400">No matches in this conversation</div>
+          ) : results.map((r) => (
+            <button
+              key={r.node_id}
+              onClick={() => handleSelect(r)}
+              className="w-full text-left px-3 py-2 hover:bg-[var(--color-surface-2)] border-b border-[var(--color-border)] last:border-0"
+            >
+              <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded text-white mr-1.5" style={{ background: "#6b7280" }}>
+                {r.role || "?"}
+              </span>
+              <span className="text-[11px] text-gray-600">{(r.content || "").slice(0, 60)}\u2026</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const nodeTypes = { graphNode: GraphNode };
 
-export default function ConversationGraph({ allNodes, branches, pins = [], imports = [], onNodeSelect, selectedNodeId }) {
+export default function ConversationGraph({
+  allNodes, branches, pins = [], imports = [],
+  onNodeSelect, selectedNodeId,
+  conversationId, userId,
+}) {
   const [hoveredNode, setHoveredNode] = useState(null);
 
   const branchMap = useMemo(() => {
@@ -174,16 +240,36 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
   const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
     if (!allNodes?.length) return { nodes: [], edges: [] };
 
-    // PASS 1: Build ALL nodes first (keyed by id)
+    // PASS 1: Index ALL nodes by id (including uncommitted messages — needed for edge walking)
     const nodeDataMap = new Map();
     allNodes.forEach((n) => {
       if (nodeDataMap.has(n.id)) return;
       nodeDataMap.set(n.id, n);
     });
 
-    // PASS 2: Build flow nodes
+    // The graph is a commit graph: only summary nodes and the root system node are visible.
+    // Uncommitted messages live in the thread view and don't appear here.
+    const isVisible = (n) => n.node_type === "summary" || !n.parent_id;
+    const visibleIds = new Set();
+    nodeDataMap.forEach((n) => { if (isVisible(n)) visibleIds.add(n.id); });
+
+    // Walk up parent chain to find the nearest visible ancestor of a given node.
+    const findVisibleAncestor = (startId) => {
+      let cur = nodeDataMap.get(startId);
+      while (cur?.parent_id) {
+        const parent = nodeDataMap.get(cur.parent_id);
+        if (!parent) break;
+        if (visibleIds.has(parent.id)) return parent;
+        cur = parent;
+      }
+      return null;
+    };
+
+    // PASS 2: Build flow nodes for visible nodes only
     const flowNodeList = [];
     nodeDataMap.forEach((n) => {
+      if (!isVisible(n)) return;
+
       const br = branchMap.get(n.branch_id);
       const branchName = br?.name || "?";
       const colors = getColorForBranch(n.branch_id, branches);
@@ -191,8 +277,11 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
       const pinnedOnBranches = pinnedNodeMap.get(n.id);
       const importedByBranches = importSourceMap.get(n.id);
 
-      const words = (n.content || "").split(/\s+/).slice(0, 5).join(" ");
-      const label = words.length > 28 ? words.slice(0, 28) + "..." : words;
+      // Summary nodes: use commit message (first line). Root: use first words.
+      const rawLabel = n.node_type === "summary"
+        ? (n.content || "").split("\n")[0]
+        : (n.content || "").split(/\s+/).slice(0, 5).join(" ");
+      const label = rawLabel.length > 32 ? rawLabel.slice(0, 32) + "\u2026" : rawLabel;
 
       flowNodeList.push({
         id: n.id,
@@ -213,19 +302,25 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
       });
     });
 
-    // PASS 3: Build tree edges (parent → child)
+    // PASS 3: Build tree edges between visible nodes.
+    // Commit nodes now have parent_id pointing directly to the previous commit or root,
+    // so edges resolve directly. The findVisibleAncestor walk handles edge cases where
+    // a branch was forked from a mid-message node before being committed.
     const edges = [];
     nodeDataMap.forEach((n) => {
-      if (!n.parent_id) return;
-      if (!nodeDataMap.has(n.parent_id)) return;
+      if (!isVisible(n) || !n.parent_id) return;
 
-      const parent = nodeDataMap.get(n.parent_id);
-      const isFork = parent.branch_id !== n.branch_id;
+      const visibleParent = visibleIds.has(n.parent_id)
+        ? nodeDataMap.get(n.parent_id)
+        : findVisibleAncestor(n.id);
+      if (!visibleParent) return;
+
+      const isFork = visibleParent.branch_id !== n.branch_id;
       const colors = getColorForBranch(n.branch_id, branches);
 
       edges.push({
-        id: `e-${n.parent_id}-${n.id}`,
-        source: n.parent_id,
+        id: `e-${visibleParent.id}-${n.id}`,
+        source: visibleParent.id,
         target: n.id,
         type: "smoothstep",
         animated: isFork,
@@ -245,11 +340,11 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
       });
     });
 
-    // PASS 4: Build import edges (source_node → importing branch head)
+    // PASS 4: Build import edges (source_node → importing branch HEAD, both must be visible)
     imports.forEach((imp) => {
       const targetBranch = branchMap.get(imp.target_branch_id);
       const targetHead = targetBranch?.head_node_id;
-      if (!targetHead || !nodeDataMap.has(imp.source_node_id) || !nodeDataMap.has(targetHead)) return;
+      if (!targetHead || !visibleIds.has(imp.source_node_id) || !visibleIds.has(targetHead)) return;
       if (imp.source_node_id === targetHead) return;
 
       edges.push({
@@ -329,6 +424,13 @@ export default function ConversationGraph({ allNodes, branches, pins = [], impor
         <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} pannable zoomable
           className="!bg-white/90 !border-[var(--color-border)] !shadow-sm !rounded-lg"
           style={{ width: 140, height: 90 }} />
+        {conversationId && userId && (
+          <SearchOverlay
+            conversationId={conversationId}
+            userId={userId}
+            onNodeSelect={onNodeSelect}
+          />
+        )}
       </ReactFlow>
 
       {/* Legend */}

@@ -35,6 +35,14 @@ def call_llm(context_nodes: list[dict]) -> str:
     # LiteLLM proxy) doesn't redirect the request and reject our key.
     client = Anthropic(api_key=api_key, base_url="https://api.anthropic.com")
     system_chunks = [n["content"] for n in context_nodes if n.get("role") == "system"]
+    # Commit nodes (node_type="summary", role=None) carry a raw transcript of
+    # committed turns.  Include them in the system context so the LLM retains
+    # history even after those individual messages are elided.
+    summary_chunks = [
+        f"[Committed context]\n{n['content']}"
+        for n in context_nodes
+        if n.get("node_type") == "summary"
+    ]
 
     # Query 1 ranks ancestors newest-first (depth ASC). Re-sort so the LLM
     # receives them in chronological order: ancestors oldest-first (depth DESC),
@@ -60,10 +68,11 @@ def call_llm(context_nodes: list[dict]) -> str:
         return _stub_reply(len(context_nodes), total_tokens)
 
     try:
+        all_system = system_chunks + summary_chunks
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=1024,
-            system="\n\n".join(system_chunks) or "You are a helpful AI assistant.",
+            system="\n\n".join(all_system) or "You are a helpful AI assistant.",
             messages=messages,
         )
         return response.content[0].text
@@ -74,3 +83,44 @@ def call_llm(context_nodes: list[dict]) -> str:
         print(f"[llm.call_llm] falling back to stub: {type(exc).__name__}: {exc}",
               file=sys.stderr)
         return _stub_reply(len(context_nodes), total_tokens)
+
+
+def summarize_nodes(nodes: list[dict]) -> str:
+    """Generate a 1-2 sentence summary of a list of conversation nodes.
+
+    Used by the commit endpoint. Falls back to a stub if ANTHROPIC_API_KEY
+    is not set or if the API call fails.
+    """
+    if not nodes:
+        return "Empty commit — no messages to summarize."
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        preview = " | ".join(
+            (n.get("content") or "")[:60] for n in nodes[:3]
+        )
+        return f"[Stub] Recent turns: {preview[:200]}"
+
+    from anthropic import Anthropic
+
+    client = Anthropic(api_key=api_key)
+    combined = "\n\n".join(
+        f"[{n.get('role', 'unknown')}]: {n.get('content', '')}"
+        for n in nodes
+    )
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            system=(
+                "Summarize the following conversation turns in 1-2 sentences. "
+                "Be concise and factual. Do not start with 'The conversation'."
+            ),
+            messages=[{"role": "user", "content": combined}],
+        )
+        return response.content[0].text
+    except Exception as exc:
+        import sys as _sys
+        print(f"[llm.summarize_nodes] fallback: {type(exc).__name__}: {exc}",
+              file=_sys.stderr)
+        return f"[Summary unavailable: {type(exc).__name__}]"

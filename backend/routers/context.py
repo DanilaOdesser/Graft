@@ -7,8 +7,15 @@ import uuid
 
 from db import get_db
 from models.context import ContextPin, ContextImport
+from models.core import Branch
+from sse import publish
 
 router = APIRouter()
+
+
+def _get_conv_id(branch_id: uuid.UUID, db: Session) -> str | None:
+    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+    return str(branch.conversation_id) if branch else None
 
 
 class PinCreate(BaseModel):
@@ -25,7 +32,7 @@ class ImportCreate(BaseModel):
 
 
 @router.post("/branches/{branch_id}/pins", status_code=201)
-def create_pin(branch_id: uuid.UUID, body: PinCreate, db: Session = Depends(get_db)):
+async def create_pin(branch_id: uuid.UUID, body: PinCreate, db: Session = Depends(get_db)):
     pin = ContextPin(
         id=uuid.uuid4(),
         branch_id=branch_id,
@@ -41,7 +48,7 @@ def create_pin(branch_id: uuid.UUID, body: PinCreate, db: Session = Depends(get_
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Node already pinned on this branch")
-    return {
+    pin_dict = {
         "id": str(pin.id),
         "branch_id": str(pin.branch_id),
         "node_id": str(pin.node_id),
@@ -50,6 +57,10 @@ def create_pin(branch_id: uuid.UUID, body: PinCreate, db: Session = Depends(get_
         "priority": pin.priority,
         "created_at": str(pin.created_at),
     }
+    conv_id = _get_conv_id(branch_id, db)
+    if conv_id:
+        await publish(conv_id, "pin_created", {"pin": pin_dict})
+    return pin_dict
 
 
 @router.get("/branches/{branch_id}/pins")
@@ -75,17 +86,22 @@ def list_pins(branch_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.delete("/pins/{pin_id}", status_code=204)
-def delete_pin(pin_id: uuid.UUID, db: Session = Depends(get_db)):
+async def delete_pin(pin_id: uuid.UUID, db: Session = Depends(get_db)):
     pin = db.query(ContextPin).filter(ContextPin.id == pin_id).first()
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+    stored_pin_id = str(pin.id)
+    branch_id_str = str(pin.branch_id)
+    conv_id = _get_conv_id(pin.branch_id, db)
     db.delete(pin)
     db.commit()
+    if conv_id:
+        await publish(conv_id, "pin_deleted", {"pin_id": stored_pin_id, "branch_id": branch_id_str})
     return Response(status_code=204)
 
 
 @router.post("/branches/{branch_id}/imports", status_code=201)
-def create_import(branch_id: uuid.UUID, body: ImportCreate, db: Session = Depends(get_db)):
+async def create_import(branch_id: uuid.UUID, body: ImportCreate, db: Session = Depends(get_db)):
     imp = ContextImport(
         id=uuid.uuid4(),
         target_branch_id=branch_id,
@@ -96,7 +112,7 @@ def create_import(branch_id: uuid.UUID, body: ImportCreate, db: Session = Depend
     db.add(imp)
     db.commit()
     db.refresh(imp)
-    return {
+    imp_dict = {
         "id": str(imp.id),
         "target_branch_id": str(imp.target_branch_id),
         "source_node_id": str(imp.source_node_id),
@@ -104,6 +120,10 @@ def create_import(branch_id: uuid.UUID, body: ImportCreate, db: Session = Depend
         "imported_by": str(imp.imported_by),
         "imported_at": str(imp.imported_at),
     }
+    conv_id = _get_conv_id(branch_id, db)
+    if conv_id:
+        await publish(conv_id, "import_created", {"import": imp_dict})
+    return imp_dict
 
 
 @router.get("/branches/{branch_id}/imports")
@@ -128,10 +148,15 @@ def list_imports(branch_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.delete("/imports/{import_id}", status_code=204)
-def delete_import(import_id: uuid.UUID, db: Session = Depends(get_db)):
+async def delete_import(import_id: uuid.UUID, db: Session = Depends(get_db)):
     imp = db.query(ContextImport).filter(ContextImport.id == import_id).first()
     if not imp:
         raise HTTPException(status_code=404, detail="Import not found")
+    stored_import_id = str(imp.id)
+    branch_id_str = str(imp.target_branch_id)
+    conv_id = _get_conv_id(imp.target_branch_id, db)
     db.delete(imp)
     db.commit()
+    if conv_id:
+        await publish(conv_id, "import_deleted", {"import_id": stored_import_id, "branch_id": branch_id_str})
     return Response(status_code=204)

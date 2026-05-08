@@ -14,11 +14,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db import get_db
 from models.core import Branch, Conversation, Node
+from sse import subscribe, event_generator
 from schemas import (
     BranchOut,
     ConversationCreate,
@@ -136,3 +138,21 @@ def get_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
     payload = _conv_to_dict(conv)
     payload["branches"] = [_branch_to_dict(b) for b in branches]
     return payload
+
+
+@router.get("/conversations/{conv_id}/stream")
+async def stream_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
+    """SSE stream for live graph updates in this conversation."""
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    q = await subscribe(str(conv_id))
+    return StreamingResponse(
+        event_generator(str(conv_id), q),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

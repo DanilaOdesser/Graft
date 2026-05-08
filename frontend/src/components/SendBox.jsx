@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { api } from "../api";
 
-export default function SendBox({ headNodeId, branchId, conversationId, onTurnComplete }) {
+export default function SendBox({ headNodeId, branchId, onTurnComplete, onOptimisticSend }) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
     if (!message.trim() || !headNodeId) return;
+    const text = message.trim();
+    setMessage("");
     setSending(true);
+    onOptimisticSend?.(text);
     try {
-      await api.agentTurn({ node_id: headNodeId, branch_id: branchId, user_message: message.trim(), budget: 4096 });
-      setMessage("");
+      await api.agentTurn({ node_id: headNodeId, branch_id: branchId, user_message: text, budget: 4096 });
       onTurnComplete?.();
     } catch (err) { console.error("Send failed:", err); }
     setSending(false);

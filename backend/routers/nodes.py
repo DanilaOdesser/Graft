@@ -7,6 +7,9 @@ import uuid
 
 from db import get_db
 from models.core import Node, Branch
+from models.context import NodeSummary
+from sse import publish
+from llm import summarize_nodes as _summarize_nodes
 
 router = APIRouter()
 
@@ -18,6 +21,11 @@ class NodeCreate(BaseModel):
     node_type: str
     role: Optional[str] = None
     content: str
+
+
+class SummarizeRequest(BaseModel):
+    branch_name: str
+    created_by: uuid.UUID
 
 
 @router.post("/nodes", status_code=201)
@@ -59,7 +67,15 @@ def create_node(body: NodeCreate, db: Session = Depends(get_db)):
 
 @router.get("/conversations/{conv_id}/nodes")
 def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Return ALL nodes for a conversation with full parent/branch data (for graph view)."""
+    """Return nodes for a conversation for the graph view.
+
+    Nodes that have been committed (i.e., referenced in node_summaries as
+    summarized_node_id) are excluded — the summary node represents them.
+    """
+    summarized_ids = {
+        str(row.summarized_node_id)
+        for row in db.query(NodeSummary.summarized_node_id).all()
+    }
     nodes = (
         db.query(Node)
         .filter(Node.conversation_id == conv_id)
@@ -79,6 +95,7 @@ def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
             "created_at": str(n.created_at),
         }
         for n in nodes
+        if str(n.id) not in summarized_ids
     ]
 
 
@@ -98,3 +115,95 @@ def get_node(node_id: uuid.UUID, db: Session = Depends(get_db)):
         "token_count": node.token_count,
         "created_at": str(node.created_at),
     }
+
+
+@router.post("/nodes/{node_id}/summarize", status_code=201)
+async def summarize_node(
+    node_id: uuid.UUID,
+    body: SummarizeRequest,
+    db: Session = Depends(get_db),
+):
+    """Summarize a node via LLM, create a new branch whose head is the summary node."""
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    # LLM summary of the node content
+    summary_text = _summarize_nodes([{"role": node.role or "unknown", "content": node.content}])
+
+    # Create the new branch (temp head; updated after node insert)
+    new_branch = Branch(
+        id=uuid.uuid4(),
+        conversation_id=node.conversation_id,
+        name=body.branch_name,
+        head_node_id=node_id,
+        base_node_id=node_id,
+        created_by=body.created_by,
+    )
+    db.add(new_branch)
+    db.flush()
+
+    # Create the summary node with same parent as the original
+    content = summary_text
+    summary_node = Node(
+        id=uuid.uuid4(),
+        conversation_id=node.conversation_id,
+        parent_id=node.parent_id,
+        branch_id=new_branch.id,
+        node_type="summary",
+        role=None,
+        content=content,
+        token_count=int(len(content.split()) * 1.3),
+    )
+    db.add(summary_node)
+    db.flush()
+
+    # Record which node this summary covers
+    db.add(NodeSummary(
+        summary_node_id=summary_node.id,
+        summarized_node_id=node_id,
+    ))
+
+    # Point branch head/base at the new summary node
+    new_branch.head_node_id = summary_node.id
+    new_branch.base_node_id = summary_node.id
+
+    db.execute(
+        text("UPDATE conversations SET updated_at = now() WHERE id = :cid"),
+        {"cid": str(node.conversation_id)},
+    )
+    db.commit()
+    db.refresh(summary_node)
+    db.refresh(new_branch)
+
+    node_dict = {
+        "id": str(summary_node.id),
+        "conversation_id": str(summary_node.conversation_id),
+        "parent_id": str(summary_node.parent_id) if summary_node.parent_id else None,
+        "branch_id": str(summary_node.branch_id),
+        "node_type": summary_node.node_type,
+        "role": summary_node.node_type,
+        "content": summary_node.content,
+        "token_count": summary_node.token_count,
+        "created_at": str(summary_node.created_at),
+    }
+    branch_dict = {
+        "id": str(new_branch.id),
+        "conversation_id": str(new_branch.conversation_id),
+        "name": new_branch.name,
+        "head_node_id": str(new_branch.head_node_id),
+        "base_node_id": str(new_branch.base_node_id),
+        "created_by": str(new_branch.created_by),
+        "is_archived": new_branch.is_archived,
+        "created_at": str(new_branch.created_at),
+    }
+
+    # commit_created SSE removes the original node from the graph and adds the summary
+    await publish(str(node.conversation_id), "commit_created", {
+        "node": node_dict,
+        "branch": branch_dict,
+        "summarized_node_ids": [str(node_id)],
+    })
+    await publish(str(node.conversation_id), "branch_updated", {"branch": branch_dict})
+
+    return {"node": node_dict, "branch": branch_dict}

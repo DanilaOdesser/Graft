@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, DEFAULT_USER_ID } from "../api";
 import BranchSidebar from "../components/BranchSidebar";
@@ -14,6 +14,7 @@ export default function ConversationView() {
   const [branches, setBranches] = useState([]);
   const [selected, setSelected] = useState(null);
   const [contextNodes, setContextNodes] = useState([]);
+  const [pendingMessages, setPendingMessages] = useState([]);
   const [allNodes, setAllNodes] = useState([]);
   const [showPins, setShowPins] = useState(false);
   const [showImports, setShowImports] = useState(false);
@@ -24,8 +25,13 @@ export default function ConversationView() {
   const [pinPriority, setPinPriority] = useState(5);
   const [pinReason, setPinReason] = useState("");
   const [selectedGraphNode, setSelectedGraphNode] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncToast, setSyncToast] = useState(null);
+  const [makingBranch, setMakingBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [branchCreateError, setBranchCreateError] = useState("");
+  const [makingSummary, setMakingSummary] = useState(false);
+  const [summarizeBranchName, setSummarizeBranchName] = useState("");
+  const [summarizeError, setSummarizeError] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
 
   // Load conversation + branches
   useEffect(() => {
@@ -42,6 +48,7 @@ export default function ConversationView() {
     if (!selected?.head_node_id) return;
     api.getContext(selected.head_node_id, 8000).then((data) => {
       setContextNodes(Array.isArray(data) ? data : data?.nodes || []);
+      setPendingMessages([]);
     }).catch(() => setContextNodes([]));
   }, [selected]);
 
@@ -68,6 +75,62 @@ export default function ConversationView() {
   useEffect(() => { refreshAllNodes(); }, [refreshAllNodes]);
   useEffect(() => { refreshPinsAndImports(); }, [refreshPinsAndImports]);
 
+  // SSE live updates
+  useEffect(() => {
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+    const es = new EventSource(`${API_URL}/conversations/${id}/stream`);
+
+    es.addEventListener("node_created", (e) => {
+      const { node } = JSON.parse(e.data);
+      setAllNodes((prev) => prev.some((n) => n.id === node.id) ? prev : [...prev, node]);
+    });
+
+    es.addEventListener("branch_updated", (e) => {
+      const { branch } = JSON.parse(e.data);
+      setBranches((prev) => {
+        const exists = prev.some((b) => b.id === branch.id);
+        return exists
+          ? prev.map((b) => (b.id === branch.id ? branch : b))
+          : [...prev, branch];
+      });
+      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
+    });
+
+    es.addEventListener("pin_created", (e) => {
+      const { pin } = JSON.parse(e.data);
+      setAllPins((prev) => prev.some((p) => p.id === pin.id) ? prev : [...prev, pin]);
+    });
+
+    es.addEventListener("pin_deleted", (e) => {
+      const { pin_id } = JSON.parse(e.data);
+      setAllPins((prev) => prev.filter((p) => p.id !== pin_id));
+    });
+
+    es.addEventListener("import_created", (e) => {
+      const { import: imp } = JSON.parse(e.data);
+      setAllImports((prev) => prev.some((i) => i.id === imp.id) ? prev : [...prev, imp]);
+    });
+
+    es.addEventListener("import_deleted", (e) => {
+      const { import_id } = JSON.parse(e.data);
+      setAllImports((prev) => prev.filter((i) => i.id !== import_id));
+    });
+
+    es.addEventListener("commit_created", (e) => {
+      const { node, branch, summarized_node_ids = [] } = JSON.parse(e.data);
+      setAllNodes((prev) => {
+        const filtered = prev.filter((n) => !summarized_node_ids.includes(n.id));
+        return filtered.some((n) => n.id === node.id) ? filtered : [...filtered, node];
+      });
+      setBranches((prev) => prev.map((b) => (b.id === branch.id ? branch : b)));
+      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
+    });
+
+    es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
+
+    return () => es.close();
+  }, [id]);
+
   // Imports
   const refreshImports = useCallback(() => {
     if (!selected?.id) return;
@@ -89,13 +152,20 @@ export default function ConversationView() {
     if (selected?.id === branchId) setSelected(branches[0] || null);
   };
 
+  const isHeadSummary = useMemo(
+    () => allNodes.find((n) => n.id === selected?.head_node_id)?.node_type === "summary",
+    [allNodes, selected]
+  );
+
   const handleTurnComplete = () => {
-    if (selected) {
-      api.getBranch(selected.id).then((br) => {
-        setSelected(br);
-        setBranches((prev) => prev.map((b) => b.id === br.id ? br : b));
-      });
-    }
+    refreshContext();   // SSE handles branch/node state; this syncs the thread view
+  };
+
+  const handleOptimisticSend = (text) => {
+    setPendingMessages([
+      { id: "pending-user", role: "user", content: text, token_count: Math.ceil(text.split(" ").length * 1.3) },
+      { id: "pending-assistant", role: "assistant", content: null, token_count: 0, _loading: true },
+    ]);
   };
 
   const handleSyncClaude = async () => {
@@ -135,6 +205,71 @@ export default function ConversationView() {
 
   const handleGraphNodeSelect = (nodeData) => {
     setSelectedGraphNode(nodeData);
+    setMakingBranch(false);
+    setNewBranchName("");
+    setBranchCreateError("");
+    setMakingSummary(false);
+    setSummarizeBranchName("");
+    setSummarizeError("");
+  };
+
+  const handleCreateBranchFromNode = async () => {
+    if (!newBranchName.trim() || !selectedGraphNode) return;
+    setBranchCreateError("");
+    try {
+      const br = await api.createBranch(id, {
+        name: newBranchName.trim(),
+        fork_node_id: selectedGraphNode.id,
+        created_by: DEFAULT_USER_ID,
+      });
+      if (br?.detail) {
+        if (String(br.detail).toLowerCase().includes("already")) {
+          setBranchCreateError("Branch name already exists.");
+        } else {
+          setBranchCreateError("Failed to create branch.");
+        }
+        return;
+      }
+      setSelected(br);
+      setBranches((prev) => {
+        const exists = prev.some((b) => b.id === br.id);
+        return exists ? prev : [...prev, br];
+      });
+      setMakingBranch(false);
+      setNewBranchName("");
+    } catch (err) {
+      setBranchCreateError("Failed to create branch.");
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!summarizeBranchName.trim() || !selectedGraphNode) return;
+    setSummarizeError("");
+    setSummarizing(true);
+    try {
+      const res = await api.summarizeNode(selectedGraphNode.id, {
+        branch_name: summarizeBranchName.trim(),
+        created_by: DEFAULT_USER_ID,
+      });
+      if (res?.detail) {
+        setSummarizeError(typeof res.detail === "string" ? res.detail : "Failed to summarize.");
+        return;
+      }
+      // SSE commit_created + branch_updated handle graph/branch updates
+      if (res?.branch) {
+        setSelected(res.branch);
+        setBranches((prev) => {
+          const exists = prev.some((b) => b.id === res.branch.id);
+          return exists ? prev : [...prev, res.branch];
+        });
+      }
+      setMakingSummary(false);
+      setSummarizeBranchName("");
+    } catch (err) {
+      setSummarizeError("Failed to summarize.");
+    } finally {
+      setSummarizing(false);
+    }
   };
 
   if (!conv) {
@@ -154,6 +289,8 @@ export default function ConversationView() {
         onSelect={setSelected}
         onCreate={handleCreateBranch}
         onArchive={handleArchiveBranch}
+        isHeadSummary={isHeadSummary}
+        onCommit={handleTurnComplete}
       />
 
       {/* Main area */}
@@ -231,7 +368,7 @@ export default function ConversationView() {
             {tab === "thread" ? (
               <>
                 <MessageThread
-                  nodes={contextNodes}
+                  nodes={[...contextNodes, ...pendingMessages]}
                   onPin={(node) => setPinningNode(node)}
                   onImport={(node) => setImportTarget(node)}
                   onExportSynced={handleTurnComplete}
@@ -239,8 +376,8 @@ export default function ConversationView() {
                 <SendBox
                   headNodeId={selected?.head_node_id}
                   branchId={selected?.id}
-                  conversationId={id}
                   onTurnComplete={handleTurnComplete}
+                  onOptimisticSend={handleOptimisticSend}
                 />
               </>
             ) : (
@@ -251,6 +388,8 @@ export default function ConversationView() {
                 imports={allImports}
                 onNodeSelect={handleGraphNodeSelect}
                 selectedNodeId={selectedGraphNode?.id}
+                conversationId={id}
+                userId={DEFAULT_USER_ID}
               />
             )}
           </div>
@@ -324,6 +463,95 @@ export default function ConversationView() {
                       </svg>
                       Import to another branch
                     </button>
+
+                    {/* Branch creation */}
+                    <div className="mt-1 pt-1 border-t border-[var(--color-border)]">
+                      {!makingBranch ? (
+                        <button
+                          onClick={() => { setMakingBranch(true); setBranchCreateError(""); setMakingSummary(false); }}
+                          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-blue)] hover:text-[var(--color-blue)] hover:bg-[var(--color-blue-dim)] transition-colors text-left"
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Create branch here
+                        </button>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <input
+                            value={newBranchName}
+                            onChange={(e) => setNewBranchName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCreateBranchFromNode()}
+                            placeholder="Branch name…"
+                            autoFocus
+                            className="w-full px-2 py-1.5 text-xs rounded border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-blue)]"
+                          />
+                          {branchCreateError && (
+                            <p className="text-[10px] text-[var(--color-red)]">{branchCreateError}</p>
+                          )}
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={handleCreateBranchFromNode}
+                              disabled={!newBranchName.trim()}
+                              className="flex-1 px-2 py-1 text-xs rounded bg-[var(--color-blue)] text-white font-medium disabled:opacity-40"
+                            >
+                              Create
+                            </button>
+                            <button
+                              onClick={() => { setMakingBranch(false); setNewBranchName(""); setBranchCreateError(""); }}
+                              className="px-2 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-text-dim)]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Summarize into new branch */}
+                    <div className="pt-1 border-t border-[var(--color-border)]">
+                      {!makingSummary ? (
+                        <button
+                          onClick={() => { setMakingSummary(true); setSummarizeError(""); setMakingBranch(false); }}
+                          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-violet)] hover:text-[var(--color-violet)] hover:bg-[var(--color-violet-dim)] transition-colors text-left"
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Summarize into new branch
+                        </button>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] text-[var(--color-text-faint)]">LLM will summarize this node's content into a new summary node on a new branch.</p>
+                          <input
+                            value={summarizeBranchName}
+                            onChange={(e) => setSummarizeBranchName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleSummarize()}
+                            placeholder="New branch name…"
+                            autoFocus
+                            className="w-full px-2 py-1.5 text-xs rounded border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-violet)]"
+                          />
+                          {summarizeError && (
+                            <p className="text-[10px] text-[var(--color-red)]">{summarizeError}</p>
+                          )}
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={handleSummarize}
+                              disabled={!summarizeBranchName.trim() || summarizing}
+                              className="flex-1 px-2 py-1 text-xs rounded bg-[var(--color-violet)] text-white font-medium disabled:opacity-40"
+                            >
+                              {summarizing ? "Summarizing..." : "Summarize"}
+                            </button>
+                            <button
+                              onClick={() => { setMakingSummary(false); setSummarizeBranchName(""); setSummarizeError(""); }}
+                              className="px-2 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-text-dim)]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

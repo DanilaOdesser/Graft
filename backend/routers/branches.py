@@ -8,11 +8,19 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from db import get_db
+from models.context import NodeSummary
 from models.core import Branch, Node
 from schemas import BranchCreate
+from sse import publish
 
 router = APIRouter()
+
+
+class CommitRequest(BaseModel):
+    commit_message: str
 
 
 QUERY_1_CONTEXT_ASSEMBLY = """
@@ -108,7 +116,7 @@ def _branch_to_dict(b: Branch) -> dict:
 
 
 @router.post("/conversations/{conv_id}/branches", status_code=201)
-def create_branch(conv_id: uuid.UUID, body: BranchCreate, db: Session = Depends(get_db)):
+async def create_branch(conv_id: uuid.UUID, body: BranchCreate, db: Session = Depends(get_db)):
     # Verify the fork node exists in this conversation.
     fork = db.query(Node).filter(Node.id == body.fork_node_id).first()
     if not fork:
@@ -131,7 +139,9 @@ def create_branch(conv_id: uuid.UUID, body: BranchCreate, db: Session = Depends(
         db.rollback()
         raise HTTPException(status_code=409, detail="Branch name already used in this conversation")
     db.refresh(branch)
-    return _branch_to_dict(branch)
+    branch_dict = _branch_to_dict(branch)
+    await publish(str(conv_id), "branch_updated", {"branch": branch_dict})
+    return branch_dict
 
 
 @router.get("/branches/{branch_id}")
@@ -150,6 +160,102 @@ def archive_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
     branch.is_archived = True
     db.commit()
     return Response(status_code=204)
+
+
+@router.post("/branches/{branch_id}/commit", status_code=201)
+async def commit_branch(
+    branch_id: uuid.UUID,
+    body: CommitRequest,
+    db: Session = Depends(get_db),
+):
+    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+
+    head = db.query(Node).filter(Node.id == branch.head_node_id).first()
+    if not head:
+        raise HTTPException(status_code=400, detail="Branch has no head node")
+    if head.node_type == "summary":
+        raise HTTPException(status_code=400, detail="Nothing to commit — HEAD is already a summary node")
+
+    # Walk ancestors collecting uncommitted message nodes.
+    # Stop (without including) at a summary node or system/root node — that
+    # node becomes `previous_visible`, the direct parent of the new commit node.
+    # This ensures commit nodes chain to each other (or to root) rather than
+    # to intermediate message nodes that get excluded from the graph after commit.
+    uncommitted: list[Node] = []
+    previous_visible: Node | None = None
+    current: Node | None = head
+    while current:
+        if current.node_type == "summary" or current.role == "system":
+            previous_visible = current
+            break
+        uncommitted.append(current)
+        if not current.parent_id:
+            break
+        parent = db.query(Node).filter(Node.id == current.parent_id).first()
+        if parent is None:
+            break
+        current = parent
+
+    if not uncommitted:
+        raise HTTPException(status_code=400, detail="Nothing to commit")
+
+    # Build content: commit message (first line = graph label) + raw turn transcript.
+    # Messages are accumulated oldest-first; user/assistant only.
+    messages_text = "\n\n".join(
+        f"{(n.role or 'unknown').capitalize()}: {n.content}"
+        for n in reversed(uncommitted)
+        if n.role in ("user", "assistant")
+    )
+    content = f"{body.commit_message}\n\n{messages_text}" if messages_text else body.commit_message
+
+    summary_node = Node(
+        id=uuid.uuid4(),
+        conversation_id=branch.conversation_id,
+        parent_id=previous_visible.id if previous_visible else None,
+        branch_id=branch.id,
+        node_type="summary",
+        role=None,
+        content=content,
+        token_count=int(len(content.split()) * 1.3),
+    )
+    db.add(summary_node)
+    db.flush()
+
+    for n in uncommitted:
+        db.add(NodeSummary(
+            summary_node_id=summary_node.id,
+            summarized_node_id=n.id,
+        ))
+
+    branch.head_node_id = summary_node.id
+    db.execute(
+        text("UPDATE conversations SET updated_at = now() WHERE id = :cid"),
+        {"cid": str(branch.conversation_id)},
+    )
+    db.commit()
+    db.refresh(summary_node)
+    db.refresh(branch)
+
+    node_dict = {
+        "id": str(summary_node.id),
+        "conversation_id": str(summary_node.conversation_id),
+        "parent_id": str(summary_node.parent_id),
+        "branch_id": str(summary_node.branch_id),
+        "node_type": summary_node.node_type,
+        "role": summary_node.node_type,  # role col is NULL for summary; return node_type instead
+        "content": summary_node.content,
+        "token_count": summary_node.token_count,
+        "created_at": str(summary_node.created_at),
+    }
+    await publish(str(branch.conversation_id), "commit_created", {
+        "node": node_dict,
+        "branch": _branch_to_dict(branch),
+        "summarized_node_ids": [str(n.id) for n in uncommitted],
+    })
+
+    return {"node": node_dict, "commit_message": body.commit_message}
 
 
 @router.get("/nodes/{node_id}/context")
