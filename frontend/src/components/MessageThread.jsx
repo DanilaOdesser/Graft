@@ -82,6 +82,13 @@ export default function MessageThread({ nodes, onPin, onImport, onExportSynced }
             <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               {onPin && <button onClick={() => onPin(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-amber)] px-2 py-0.5 rounded hover:bg-[var(--color-amber-dim)] transition-colors">Pin</button>}
               {onImport && <button onClick={() => onImport(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-emerald)] px-2 py-0.5 rounded hover:bg-[var(--color-emerald-dim)] transition-colors">Import to...</button>}
+              <button
+                onClick={() => handleExport(n)}
+                disabled={exportingId === n.id}
+                className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-blue)] px-2 py-0.5 rounded hover:bg-[var(--color-blue-dim)] transition-colors disabled:opacity-50"
+              >
+                {exportingId === n.id ? "Exporting…" : "→ Claude"}
+              </button>
             </div>
           )}
         </div>
