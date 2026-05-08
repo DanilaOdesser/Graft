@@ -40,9 +40,9 @@ function Nav() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">
+      <div className="h-screen overflow-hidden flex flex-col bg-[var(--color-bg)]">
         <Nav />
-        <main className="flex-1 flex flex-col">
+        <main className="flex-1 flex flex-col min-h-0 overflow-y-auto">
           <Routes>
             <Route path="/" element={<ConversationList />} />
             <Route path="/conversations/:id" element={<ConversationView />} />

@@ -1,20 +1,45 @@
 # Graft — Git for Agent Conversations
 
-A database-driven app that brings Git-style version control to AI agent conversations. Branch, pin, cherry-pick, and search across long-running chats — the DB is the protagonist.
+A database-driven app that brings Git-style version control to AI agent conversations. Branch, commit, pin, cherry-pick, search, and export across long-running chats — the DB is the protagonist.
 
 ## The Problem
 
-Long agent conversations get bloated. You want to try something speculative without polluting your main thread, or you remember solving a problem in a different chat and want to pull that context in. Today you copy-paste. Graft builds proper structure for it.
+Long agent conversations get bloated. You want to try something speculative without polluting your main thread, or you remember solving a problem in a different chat and want to pull that context in. Today you copy-paste. Graft builds proper structure for it — and lets you take any branch directly into Claude Code with full history intact.
 
 ## Core Concepts
 
 | Concept | What it does |
 |---------|-------------|
-| **Conversation** | A DAG of nodes (messages), owned by a user |
+| **Conversation** | A DAG of nodes, owned by a user |
 | **Branch** | Named pointer into the DAG — like a git branch |
+| **Commit** | Snapshots a run of messages into a single summary node; committed messages are elided from future context and replaced by the commit node |
 | **Pin** | "Always include this node in context on this branch" |
-| **Import** | Cherry-pick a node (or subtree) from another branch |
-| **Summary** | Condense old messages to save tokens |
+| **Import** | Cherry-pick a node (or subtree) from another branch into context |
+| **Summarize** | LLM-condenses a single node into a new summary node on a new branch |
+| **Export** | Sends a branch to Claude Code as a resumable JSONL session; syncs new CC turns back on next click |
+
+## Schema
+
+![Database schema](db/schema.png)
+
+11 tables: `users` · `conversations` · `nodes` · `node_ancestry` · `branches` · `context_pins` · `context_imports` · `node_summaries` · `tags` · `node_tags` · `branch_shares`
+
+Full DDL: [`docs/03_database_schema.md`](docs/03_database_schema.md) · DBML: [`db/schema.dbml`](db/schema.dbml)
+
+### Key design decisions
+
+- **`nodes` is the single source of truth** for all content — messages, system prompts, and commit nodes are all rows in `nodes`, distinguished by `node_type` (`message` / `summary`) and `role` (`user` / `assistant` / `system` / `NULL`).
+- **`node_ancestry`** is a closure table maintained by a DB trigger. Every ancestor-descendant pair at every depth is stored, making the context assembly query a simple join with no recursion.
+- **`node_summaries`** links a commit node (`summary_node_id`) to the individual message nodes it replaced (`summarized_node_id`). The context assembly query uses this to elide committed messages from context while including the commit node itself.
+- **Commit nodes** (`node_type = 'summary'`, `role = NULL`) carry the raw message transcript as their `content` field so the LLM can reconstruct history from a single node. They are injected into the system prompt by `call_llm`.
+
+## Three Core Queries
+
+1. **Context Assembly** (`QUERY_1_CONTEXT_ASSEMBLY` in `branches.py`) — walks ancestors via closure table, unions pinned + imported nodes, elides nodes referenced in `node_summaries`, ranks by priority/recency, truncates at token budget.
+2. **Branch Divergence** — finds LCA of two branches, computes set differences for merge decisions.
+3. **Full-Text Search** — `websearch_to_tsquery` + GIN index across all conversations with branch context.
+
+Full SQL: [`db/queries.sql`](db/queries.sql)
 
 ## Tech Stack
 
@@ -22,23 +47,10 @@ Long agent conversations get bloated. You want to try something speculative with
 |-------|-----------|
 | Database | PostgreSQL (Supabase) — closure table, full-text search, GIN indexes |
 | Backend | FastAPI + SQLAlchemy 2.0 |
-| Frontend | React + Vite + Tailwind CSS v4 |
-| LLM | Claude API (with stub fallback) |
-| Hosting | Render (backend) + Vercel (frontend) + Supabase (DB) |
-
-## Schema (11 tables)
-
-`users` · `conversations` · `nodes` · `node_ancestry` · `branches` · `context_pins` · `context_imports` · `node_summaries` · `tags` · `node_tags` · `branch_shares`
-
-Full DDL: [`docs/03_database_schema.md`](docs/03_database_schema.md) · DBML: [`db/schema.dbml`](db/schema.dbml)
-
-## Three Core Queries
-
-1. **Context Assembly** (hot path) — walks ancestors via closure table, unions pinned + imported nodes, elides summaries, ranks by priority/recency, truncates at token budget
-2. **Branch Divergence** — finds LCA of two branches, computes set differences for merge decisions
-3. **Full-Text Search** — `websearch_to_tsquery` + GIN index across all conversations with branch context
-
-Full SQL: [`db/queries.sql`](db/queries.sql)
+| Frontend | React 19 + Vite + Tailwind CSS v4 |
+| Graph view | ReactFlow |
+| LLM | Claude API (Haiku for summarization, Sonnet for agent turns; stub fallback when no key) |
+| Realtime | Server-Sent Events (in-process asyncio pub/sub via `sse.py`) |
 
 ---
 
@@ -67,12 +79,11 @@ ANTHROPIC_API_KEY=sk-ant-...   # optional — without it, agent returns a stub r
 ### 2. Set up the database (one-time)
 
 ```bash
-# Run DDL + seed data
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed/init.sql
 python3 db/seed/load_seed.py
 ```
 
-This creates all 11 tables, the closure-table trigger, indexes, and loads the RecipeBox sample data (2 users, 1 conversation, 7 branches, 35 nodes).
+Creates all tables, the closure-table trigger, indexes, and loads the RecipeBox sample data (2 users, 1 conversation, 7 branches, 35 nodes).
 
 ### 3. Start the backend
 
@@ -84,7 +95,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Verify: `curl http://localhost:8000/health` should return `{"status":"ok"}`
+`curl http://localhost:8000/health` → `{"status":"ok"}`
 
 ### 4. Start the frontend
 
@@ -98,73 +109,63 @@ Open **http://localhost:5173**
 
 ### 5. Use the app
 
-- **Home** (`/`) — lists conversations, create new ones
-- **Conversation** (`/conversations/:id`) — branch sidebar, message thread, send messages to the agent
-- **Search** (`/search`) — full-text search across all conversations, cherry-pick results into branches
+- **Home** (`/`) — list conversations, create new ones
+- **Conversation** (`/conversations/:id`)
+  - **Thread tab** — message history, send messages, hover a message for Pin / Import to... / → Claude actions
+  - **Graph tab** — ReactFlow commit graph; click any node for details, branch-from-here, or summarize-into-new-branch
+  - **Left sidebar** — branch list, commit input (type a message and press Enter or click Commit)
+  - **Header** — Pins panel, Imports panel, Sync from Claude button
+- **Search** (`/search`) — full-text search across all conversations
 
 ---
 
 ## Running Tests
 
 ```bash
-# Backend unit tests (needs running DB with seed data)
+# Backend (needs running DB)
 cd backend && source venv/bin/activate && pytest -v
 
-# Phase 1 verification (models, routes, schemas — no DB needed)
-python tests/test_phase1.py
-
-# Phase 2 verification (ingestion tool, integration test infra — no DB needed)
-python tests/test_phase2.py
-
-# Frontend verification (components, api client, build — no DB needed)
-cd ../frontend && node tests/test_phase3.mjs
-
-# Integration tests (needs running backend + seeded DB)
-cd .. && python -m scripts.test_integration
-```
-
-## CLI Tools
-
-```bash
-# Ingest a plain-text transcript into a new conversation
-python -m scripts.ingest transcript.txt --user-id <UUID>
-
-# Input format:
-# User: How do I set up Postgres?
-# Assistant: First, install PostgreSQL...
+# SSE + commit integration tests
+cd backend && pytest tests/test_commit_sse.py -v
 ```
 
 ---
 
 ## API Endpoints
 
-### Conversations (DEV-A)
+### Conversations
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/conversations` | Create conversation (atomic: conv + branch + root node) |
+| POST | `/api/conversations` | Create conversation (conv + branch + root node, atomic) |
 | GET | `/api/conversations?owner_id=` | List user's conversations |
 | GET | `/api/conversations/{id}` | Get conversation with branches |
+| GET | `/api/conversations/{id}/nodes` | All visible nodes (excludes committed messages) |
+| GET | `/api/conversations/{id}/stream` | SSE stream for live updates |
 
-### Branches (DEV-A)
+### Branches
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/conversations/{id}/branches` | Fork a new branch |
 | GET | `/api/branches/{id}` | Get branch details |
 | POST | `/api/branches/{id}/archive` | Archive a branch |
-| GET | `/api/nodes/{id}/context?budget=N` | Context assembly (Query 1) |
+| POST | `/api/branches/{id}/commit` | Commit recent messages into a summary node |
+| POST | `/api/branches/{id}/sync-claude` | Pull new CC turns from prior export sessions |
 
-### Agent (DEV-A)
+### Agent
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/agent/turn` | Send message, get AI response |
+| POST | `/api/agent/turn` | Send message, get AI response; publishes SSE events |
 
-### Nodes (DEV-B)
+### Nodes
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/nodes` | Create a node |
 | GET | `/api/nodes/{id}` | Get a node |
+| GET | `/api/nodes/{id}/context?budget=N` | Context assembly (Query 1) |
+| POST | `/api/nodes/{id}/summarize` | LLM-summarize node into new branch |
+| POST | `/api/nodes/{id}/export-claude?launch=` | Export branch to Claude Code JSONL session |
 
-### Pins & Imports (DEV-B)
+### Pins & Imports
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/branches/{id}/pins` | Pin a node to a branch |
@@ -174,11 +175,25 @@ python -m scripts.ingest transcript.txt --user-id <UUID>
 | GET | `/api/branches/{id}/imports` | List imports |
 | DELETE | `/api/imports/{id}` | Remove an import |
 
-### Search & Divergence (DEV-B)
+### Search & Divergence
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/search?q=&user_id=&k=` | Full-text search (Query 3) |
 | GET | `/api/branches/{a}/diverge/{b}` | Branch divergence report (Query 2) |
+
+### SSE Event Types
+
+All mutation endpoints publish to `GET /api/conversations/{id}/stream`. The frontend listens and updates state in real time.
+
+| Event | Payload |
+|-------|---------|
+| `node_created` | `{ node }` |
+| `branch_updated` | `{ branch }` |
+| `pin_created` | `{ pin }` |
+| `pin_deleted` | `{ pin_id }` |
+| `import_created` | `{ import }` |
+| `import_deleted` | `{ import_id }` |
+| `commit_created` | `{ node, branch, summarized_node_ids[] }` |
 
 ---
 
@@ -187,57 +202,58 @@ python -m scripts.ingest transcript.txt --user-id <UUID>
 ```
 Graft/
 ├── README.md
+├── CLAUDE.md                          # Agentic dev guidance
 ├── .env.example
-├── render.yaml                    # Render Blueprint for backend deploy
+├── render.yaml                        # Render Blueprint for backend deploy
 ├── backend/
-│   ├── main.py                    # FastAPI app, mounts all 6 routers
-│   ├── db.py                      # SQLAlchemy engine + session
-│   ├── llm.py                     # Claude API client + stub fallback
-│   ├── schemas.py                 # Pydantic request/response models
+│   ├── main.py                        # FastAPI app — mounts all 7 routers
+│   ├── db.py                          # SQLAlchemy engine + session
+│   ├── llm.py                         # Claude API client + stub fallback
+│   ├── sse.py                         # In-process asyncio pub/sub + heartbeat
+│   ├── schemas.py                     # Pydantic request models
 │   ├── requirements.txt
 │   ├── models/
-│   │   ├── core.py                # User, Conversation, Node, Branch
-│   │   └── context.py             # NodeAncestry, Pins, Imports, Summaries, Tags, Shares
+│   │   ├── core.py                    # User, Conversation, Node, Branch
+│   │   └── context.py                 # NodeAncestry, Pins, Imports, NodeSummary,
+│   │                                  #   ClaudeExport, Tags, Shares
 │   ├── routers/
-│   │   ├── conversations.py       # Conversation CRUD
-│   │   ├── branches.py            # Branch CRUD + context assembly (Query 1)
-│   │   ├── agent.py               # Agent turn (LLM integration)
-│   │   ├── nodes.py               # Node CRUD
-│   │   ├── context.py             # Pins + imports endpoints
-│   │   └── search.py              # FTS search (Query 3) + divergence (Query 2)
+│   │   ├── conversations.py           # Conversation CRUD + SSE stream endpoint
+│   │   ├── branches.py                # Branch CRUD + commit + context assembly (Q1)
+│   │   ├── agent.py                   # Agent turn (insert nodes, call LLM, SSE publish)
+│   │   ├── nodes.py                   # Node CRUD + summarize endpoint
+│   │   ├── context.py                 # Pins + imports endpoints
+│   │   ├── search.py                  # FTS search (Q3) + divergence (Q2)
+│   │   └── export.py                  # Export to Claude Code + sync-back
 │   └── tests/
+│       └── test_commit_sse.py
 ├── frontend/
 │   ├── src/
-│   │   ├── api.js                 # Shared API client (all endpoints)
-│   │   ├── App.jsx                # Router + nav shell
+│   │   ├── api.js                     # All API calls + DEFAULT_USER_ID
+│   │   ├── App.jsx                    # Router + nav shell
 │   │   ├── pages/
 │   │   │   ├── ConversationList.jsx
-│   │   │   ├── ConversationView.jsx
+│   │   │   ├── ConversationView.jsx   # Main view: SSE listener, all state, graph+thread tabs
 │   │   │   └── SearchPage.jsx
 │   │   └── components/
-│   │       ├── BranchSidebar.jsx
-│   │       ├── MessageThread.jsx
-│   │       ├── SendBox.jsx
+│   │       ├── BranchSidebar.jsx      # Branch list + commit input
+│   │       ├── ConversationGraph.jsx  # ReactFlow commit graph + search overlay
+│   │       ├── MessageThread.jsx      # Thread view + optimistic messages + export button
+│   │       ├── SendBox.jsx            # Chat input with optimistic send
 │   │       ├── PinsPanel.jsx
 │   │       ├── ImportModal.jsx
 │   │       └── SearchResults.jsx
-│   └── tests/
-├── scripts/
-│   ├── ingest.py                  # CLI transcript ingestion
-│   └── test_integration.py        # Integration test suite
 ├── db/
-│   ├── schema.dbml                # dbdiagram.io schema
-│   ├── queries.sql                # 3 core queries
+│   ├── schema.dbml                    # dbdiagram.io source
+│   ├── schema.png                     # Schema diagram image
+│   ├── queries.sql                    # 3 core queries
 │   └── seed/
-│       ├── init.sql               # DDL in execution order
-│       ├── load_seed.py           # Loads data.json with uuid5 mapping
-│       ├── data.json              # RecipeBox sample scenario
-│       └── relations.md           # Explains seed data relationships
+│       ├── init.sql                   # DDL in execution order
+│       ├── load_seed.py
+│       └── data.json                  # RecipeBox sample scenario
 └── docs/
+    ├── known-bugs.md                  # Active known issues
     ├── ROADMAP.md
-    ├── 01_entities_and_scenarios.md
-    ├── 02_domain_description.md
-    └── 03_database_schema.md
+    └── ...
 ```
 
 ---
@@ -245,31 +261,11 @@ Graft/
 ## Deployment
 
 ### Backend (Render)
-The repo includes `render.yaml` — connect the GitHub repo as a Render Blueprint. Set environment variables in the Render dashboard:
+Connect the GitHub repo as a Render Blueprint (`render.yaml`). Set env vars in the Render dashboard:
 - `DATABASE_URL` — Supabase connection string
-- `ANTHROPIC_API_KEY` — optional, falls back to stub
+- `ANTHROPIC_API_KEY` — optional, stubs when absent
 
 ### Frontend (Vercel)
-1. Connect repo to Vercel
-2. Set root directory to `frontend`, framework to Vite
-3. Set `VITE_API_URL` to the Render backend URL (e.g. `https://graft-backend.onrender.com/api`)
-4. Deploy
-
-After deploying, add the Vercel URL to the backend's CORS `allow_origins` in `backend/main.py`.
-
----
-
-## Index Strategy
-
-| Index | Type | Serves |
-|-------|------|--------|
-| `(ancestor_id, descendant_id)` PK | B-tree | Closure table lookups |
-| `(descendant_id, depth)` | B-tree | "All ancestors of X" (Q1, Q2) |
-| `content_tsv` | GIN | Full-text search (Q3) |
-| `(conversation_id, created_at DESC)` | B-tree | Recent messages |
-| `(branch_id, priority DESC)` | B-tree | Ordered pin retrieval (Q1) |
-| `(target_branch_id, imported_at DESC)` | B-tree | Import listing (Q1) |
-| `conversation_id WHERE is_archived=false` | Partial B-tree | Active branch filtering (Q3) |
-| `(owner_id, updated_at DESC)` | B-tree | "My recent conversations" |
-| `(conversation_id, name)` UNIQUE | B-tree | Branch name uniqueness |
-| `summarized_node_id` | B-tree | Elision check (Q1) |
+1. Connect repo, set root directory to `frontend`, framework to Vite
+2. Set `VITE_API_URL` to the Render backend URL
+3. Add the Vercel URL to `allow_origins` in `backend/main.py`

@@ -45,16 +45,20 @@ export default function ConversationView() {
     }).catch(() => {});
   }, [id]);
 
-  // Fetch context for selected branch (thread view)
+  // Fetch context for selected branch (thread view).
+  // Does NOT touch pendingMessages — clearing them is the caller's responsibility
+  // so that a mid-turn SSE-triggered refresh doesn't wipe the optimistic messages.
   const refreshContext = useCallback(() => {
     if (!selected?.head_node_id) return;
-    api.getContext(selected.head_node_id, 8000).then((data) => {
-      setContextNodes(Array.isArray(data) ? data : data?.nodes || []);
-      setPendingMessages([]);
-    }).catch(() => setContextNodes([]));
+    api.getContext(selected.head_node_id, 8000)
+      .then((data) => setContextNodes(Array.isArray(data) ? data : data?.nodes || []))
+      .catch(() => setContextNodes([]));
   }, [selected]);
 
   useEffect(() => { refreshContext(); }, [refreshContext]);
+
+  // Clear pending messages whenever the active branch changes (user switched branch).
+  useEffect(() => { setPendingMessages([]); }, [selected?.id]);
 
   const [allPins, setAllPins] = useState([]);
   const [allImports, setAllImports] = useState([]);
@@ -144,7 +148,8 @@ export default function ConversationView() {
   const handleCreateBranch = async (name) => {
     if (!selected?.head_node_id) return;
     const br = await api.createBranch(id, { name, fork_node_id: selected.head_node_id, created_by: DEFAULT_USER_ID });
-    setBranches((prev) => [...prev, br]);
+    // SSE branch_updated may arrive before this await resolves — dedup to avoid a double entry.
+    setBranches((prev) => prev.some((b) => b.id === br.id) ? prev : [...prev, br]);
     setSelected(br);
   };
 
@@ -160,7 +165,8 @@ export default function ConversationView() {
   );
 
   const handleTurnComplete = () => {
-    refreshContext();   // SSE handles branch/node state; this syncs the thread view
+    setPendingMessages([]);  // clear optimistic messages; real data is arriving
+    refreshContext();
   };
 
   const handleOptimisticSend = (text) => {
@@ -366,7 +372,7 @@ export default function ConversationView() {
         {/* Content area */}
         <div className="flex-1 flex overflow-hidden">
           {/* Main content */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             {tab === "thread" ? (
               <>
                 <MessageThread
