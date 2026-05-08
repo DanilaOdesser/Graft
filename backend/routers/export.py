@@ -327,8 +327,18 @@ def export_to_claude_code(
 
     system_chunks = [r["content"] for r in rows if r["role"] == "system"]
 
+    # Commit/summary nodes have role=NULL and node_type='summary'.  Their
+    # content is "{commit_message}\n\n{raw_transcript}" — inject them as
+    # [Committed context] blocks in the preamble, same as call_llm does, so
+    # the exported session has the full committed history.
+    system_chunks += [
+        f"[Committed context]\n{r['content']}"
+        for r in rows
+        if r["node_type"] == "summary"
+    ]
+
     # Only user/assistant turns become JSONL lines; system + summary nodes
-    # already live in the preamble.
+    # live in the preamble.
     chat_rows = [r for r in rows if r["role"] in ("user", "assistant")]
     if not chat_rows:
         raise HTTPException(

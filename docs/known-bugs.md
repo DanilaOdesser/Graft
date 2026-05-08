@@ -20,7 +20,7 @@
 
 ---
 
-## 3. Export to Claude Code is broken with commit-node schema
+## ~~3. Export to Claude Code is broken with commit-node schema~~ ✓ Fixed
 
 **Symptom:** `POST /nodes/{node_id}/export-claude` was built when every user/assistant turn was its own node. Now committed turns are stored as a single `summary` node whose `content` field contains the raw transcript (`commit_message\n\nUser: ...\nAssistant: ...`). The export query filters `role IN ('user', 'assistant')` so commit nodes (`role = NULL`, `node_type = 'summary'`) are silently skipped, producing an export that's missing all committed history.
 
