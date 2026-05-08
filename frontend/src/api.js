@@ -61,4 +61,8 @@ export const api = {
     request(`/branches/${branchId}/commit`, { method: "POST", body: JSON.stringify(data) }),
   summarizeNode: (nodeId, data) =>
     request(`/nodes/${nodeId}/summarize`, { method: "POST", body: JSON.stringify(data) }),
+  registerUser: (data) =>
+    request("/users/register", { method: "POST", body: JSON.stringify(data) }),
+  loginUser: (data) =>
+    request("/users/login", { method: "POST", body: JSON.stringify(data) }),
 };

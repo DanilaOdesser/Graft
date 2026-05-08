@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, DEFAULT_USER_ID } from "../api";
+import { api } from "../api";
+import { useAuth } from "../AuthContext";
 
 export default function ConversationList() {
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -10,18 +12,18 @@ export default function ConversationList() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.getConversations(DEFAULT_USER_ID)
+    api.getConversations(user.id)
       .then((data) => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user.id]);
 
   async function handleCreate(e) {
     e.preventDefault();
     if (!title.trim()) return;
     setCreating(true);
     try {
-      const conv = await api.createConversation({ title: title.trim(), owner_id: DEFAULT_USER_ID });
+      const conv = await api.createConversation({ title: title.trim(), owner_id: user.id });
       navigate(`/conversations/${conv.id}`);
     } finally {
       setCreating(false);

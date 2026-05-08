@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
-import { api, DEFAULT_USER_ID } from "../api";
+import { api } from "../api";
+import { useAuth } from "../AuthContext";
 
 export default function ImportModal({ sourceNode, conversationId, onClose }) {
+  const { user } = useAuth();
   const [branches, setBranches] = useState([]);
   const [targetBranchId, setTargetBranchId] = useState("");
   const [includeDescendants, setIncludeDescendants] = useState(false);
@@ -26,7 +28,7 @@ export default function ImportModal({ sourceNode, conversationId, onClose }) {
       await api.createImport(targetBranchId, {
         source_node_id: sourceNode.node_id || sourceNode.id,
         include_descendants: includeDescendants,
-        imported_by: DEFAULT_USER_ID,
+        imported_by: user.id,
       });
       onClose();
     } catch (err) { console.error("Import failed:", err); }

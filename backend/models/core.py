@@ -13,6 +13,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False)
     display_name = Column(String(100), nullable=False)
+    password_hash = Column(Text, nullable=True)  # NULL for seed/legacy users
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
 

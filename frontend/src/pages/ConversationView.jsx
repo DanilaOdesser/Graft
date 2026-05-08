@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, DEFAULT_USER_ID } from "../api";
+import { api } from "../api";
+import { useAuth } from "../AuthContext";
 import BranchSidebar from "../components/BranchSidebar";
 import MessageThread from "../components/MessageThread";
 import SendBox from "../components/SendBox";
@@ -9,6 +10,7 @@ import ConversationGraph from "../components/ConversationGraph";
 import ImportModal from "../components/ImportModal";
 
 export default function ConversationView() {
+  const { user } = useAuth();
   const { id } = useParams();
   const [conv, setConv] = useState(null);
   const [branches, setBranches] = useState([]);
@@ -147,7 +149,7 @@ export default function ConversationView() {
 
   const handleCreateBranch = async (name) => {
     if (!selected?.head_node_id) return;
-    const br = await api.createBranch(id, { name, fork_node_id: selected.head_node_id, created_by: DEFAULT_USER_ID });
+    const br = await api.createBranch(id, { name, fork_node_id: selected.head_node_id, created_by: user.id });
     // SSE branch_updated may arrive before this await resolves — dedup to avoid a double entry.
     setBranches((prev) => prev.some((b) => b.id === br.id) ? prev : [...prev, br]);
     setSelected(br);
@@ -199,7 +201,7 @@ export default function ConversationView() {
       node_id: pinningNode.id,
       priority: pinPriority,
       reason: pinReason,
-      pinned_by: DEFAULT_USER_ID,
+      pinned_by: user.id,
     });
     setPinningNode(null);
     setPinPriority(5);
@@ -228,7 +230,7 @@ export default function ConversationView() {
       const br = await api.createBranch(id, {
         name: newBranchName.trim(),
         fork_node_id: selectedGraphNode.id,
-        created_by: DEFAULT_USER_ID,
+        created_by: user.id,
       });
       if (br?.detail) {
         if (String(br.detail).toLowerCase().includes("already")) {
@@ -257,7 +259,7 @@ export default function ConversationView() {
     try {
       const res = await api.summarizeNode(selectedGraphNode.id, {
         branch_name: summarizeBranchName.trim(),
-        created_by: DEFAULT_USER_ID,
+        created_by: user.id,
       });
       if (res?.detail) {
         setSummarizeError(typeof res.detail === "string" ? res.detail : "Failed to summarize.");
@@ -397,7 +399,7 @@ export default function ConversationView() {
                 onNodeSelect={handleGraphNodeSelect}
                 selectedNodeId={selectedGraphNode?.id}
                 conversationId={id}
-                userId={DEFAULT_USER_ID}
+                userId={user.id}
               />
             )}
           </div>

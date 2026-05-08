@@ -7,6 +7,7 @@ from routers.conversations import router as conversations_router
 from routers.branches import router as branches_router
 from routers.agent import router as agent_router
 from routers.export import router as export_router
+from routers.users import router as users_router
 
 app = FastAPI(title="Graft API", description="Git for agent conversations")
 
@@ -31,6 +32,7 @@ app.include_router(conversations_router, prefix="/api")
 app.include_router(branches_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
 
 
 @app.get("/health")

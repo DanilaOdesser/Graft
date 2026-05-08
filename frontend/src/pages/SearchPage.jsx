@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { api, DEFAULT_USER_ID } from "../api";
+import { api } from "../api";
+import { useAuth } from "../AuthContext";
 import SearchResults from "../components/SearchResults";
 import ImportModal from "../components/ImportModal";
 
 export default function SearchPage() {
+  const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -15,7 +17,7 @@ export default function SearchPage() {
     setLoading(true);
     setSearched(true);
     try {
-      const data = await api.search(query, DEFAULT_USER_ID);
+      const data = await api.search(query, user.id);
       setResults(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Search failed:", err);
