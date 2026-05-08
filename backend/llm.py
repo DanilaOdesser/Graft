@@ -35,6 +35,14 @@ def call_llm(context_nodes: list[dict]) -> str:
     # LiteLLM proxy) doesn't redirect the request and reject our key.
     client = Anthropic(api_key=api_key, base_url="https://api.anthropic.com")
     system_chunks = [n["content"] for n in context_nodes if n.get("role") == "system"]
+    # Commit nodes (node_type="summary", role=None) carry a raw transcript of
+    # committed turns.  Include them in the system context so the LLM retains
+    # history even after those individual messages are elided.
+    summary_chunks = [
+        f"[Committed context]\n{n['content']}"
+        for n in context_nodes
+        if n.get("node_type") == "summary"
+    ]
 
     # Query 1 ranks ancestors newest-first (depth ASC). Re-sort so the LLM
     # receives them in chronological order: ancestors oldest-first (depth DESC),
@@ -60,10 +68,11 @@ def call_llm(context_nodes: list[dict]) -> str:
         return _stub_reply(len(context_nodes), total_tokens)
 
     try:
+        all_system = system_chunks + summary_chunks
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=1024,
-            system="\n\n".join(system_chunks) or "You are a helpful AI assistant.",
+            system="\n\n".join(all_system) or "You are a helpful AI assistant.",
             messages=messages,
         )
         return response.content[0].text

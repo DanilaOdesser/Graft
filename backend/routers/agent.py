@@ -104,17 +104,20 @@ async def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         }
         for r in rows
     ]
-    # Augment rows with role by re-fetching (small N, cheap).
+    # Augment rows with role + node_type by re-fetching (small N, cheap).
     if context_nodes:
         ids = [r["id"] for r in context_nodes]
-        roles = dict(
-            db.execute(
-                text("SELECT CAST(id AS text), role FROM nodes WHERE id = ANY(CAST(:ids AS uuid[]))"),
+        meta = {
+            row["id"]: row
+            for row in db.execute(
+                text("SELECT CAST(id AS text) AS id, role, node_type FROM nodes WHERE id = ANY(CAST(:ids AS uuid[]))"),
                 {"ids": ids},
-            ).fetchall()
-        )
+            ).mappings().fetchall()
+        }
         for n in context_nodes:
-            n["role"] = roles.get(n["id"])
+            m = meta.get(n["id"], {})
+            n["role"] = m.get("role")
+            n["node_type"] = m.get("node_type")
 
     # 3. Build the LLM messages list. Query 1 returns rows in *rank* order
     # (pins, then ancestors newest-first, then imports), but Anthropic needs
