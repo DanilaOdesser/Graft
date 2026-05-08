@@ -372,7 +372,7 @@ export default function ConversationView() {
         {/* Content area */}
         <div className="flex-1 flex overflow-hidden">
           {/* Main content */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             {tab === "thread" ? (
               <>
                 <MessageThread
