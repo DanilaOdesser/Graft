@@ -15,6 +15,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
     ],
+    # Match any Vercel deployment URL (production + previews). Tighten to an
+    # explicit list once a stable custom domain is in place.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
