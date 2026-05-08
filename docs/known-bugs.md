@@ -1,6 +1,6 @@
 # Known Bugs
 
-## 1. Optimistic message sometimes doesn't appear on first send
+## ~~1. Optimistic message sometimes doesn't appear on first send~~ ✓ Fixed
 
 **Symptom:** After hitting Send, the user message doesn't show up in the thread immediately. Usually happens the first time a message is sent on a branch. The message does land (API succeeds) and appears after `refreshContext()` completes.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 2. Creating a branch from the sidebar shows it twice
+## ~~2. Creating a branch from the sidebar shows it twice~~ ✓ Fixed
 
 **Symptom:** After typing a name and clicking Fork in BranchSidebar, the new branch appears twice in the branch list.
 

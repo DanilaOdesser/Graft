@@ -13,9 +13,12 @@ export default function SendBox({ headNodeId, branchId, onTurnComplete, onOptimi
     onOptimisticSend?.(text);
     try {
       await api.agentTurn({ node_id: headNodeId, branch_id: branchId, user_message: text, budget: 4096 });
-      onTurnComplete?.();
-    } catch (err) { console.error("Send failed:", err); }
-    setSending(false);
+    } catch (err) {
+      console.error("Send failed:", err);
+    } finally {
+      onTurnComplete?.();  // always clear pending + refresh, even on error
+      setSending(false);
+    }
   };
 
   return (
