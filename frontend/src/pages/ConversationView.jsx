@@ -168,6 +168,23 @@ export default function ConversationView() {
     ]);
   };
 
+  const handleSyncClaude = async () => {
+    if (!selected || syncing) return;
+    setSyncing(true);
+    setSyncToast(null);
+    try {
+      const r = await api.syncClaude(selected.id);
+      setSyncToast({ count: r.synced_from_claude });
+      if (r.synced_from_claude > 0) handleTurnComplete();
+      // Auto-dismiss after a few seconds
+      setTimeout(() => setSyncToast(null), 3500);
+    } catch (e) {
+      setSyncToast({ error: String(e) });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handlePin = async () => {
     if (!pinningNode || !selected) return;
     await api.createPin(selected.id, {
@@ -320,8 +337,29 @@ export default function ConversationView() {
             >
               Imports
             </button>
+            <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
+            <button
+              onClick={handleSyncClaude}
+              disabled={!selected || syncing}
+              title="Pull any new turns you typed in Claude Code into this branch"
+              className="px-2.5 py-1 rounded text-xs font-medium text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-black/5 transition-colors disabled:opacity-50"
+            >
+              {syncing ? "Syncing…" : "↩ Sync from Claude"}
+            </button>
           </div>
         </div>
+
+        {syncToast && (
+          <div className="absolute bottom-4 right-4 max-w-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 shadow-lg z-50 text-xs">
+            {syncToast.error ? (
+              <span className="text-red-600">Sync failed: {syncToast.error}</span>
+            ) : syncToast.count > 0 ? (
+              <span className="text-emerald-700">Synced {syncToast.count} turn{syncToast.count === 1 ? "" : "s"} from Claude.</span>
+            ) : (
+              <span className="text-[var(--color-text-dim)]">No new turns in Claude yet.</span>
+            )}
+          </div>
+        )}
 
         {/* Content area */}
         <div className="flex-1 flex overflow-hidden">
@@ -333,6 +371,7 @@ export default function ConversationView() {
                   nodes={[...contextNodes, ...pendingMessages]}
                   onPin={(node) => setPinningNode(node)}
                   onImport={(node) => setImportTarget(node)}
+                  onExportSynced={handleTurnComplete}
                 />
                 <SendBox
                   headNodeId={selected?.head_node_id}

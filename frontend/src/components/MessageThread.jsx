@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api";
 
 // Pins and imports are reference context, rendered at the top. The actual
 // chat flow (ancestors) sits below in chronological order so the newest
@@ -17,13 +18,32 @@ function orderForThread(nodes) {
   });
 }
 
-export default function MessageThread({ nodes, onPin, onImport }) {
+export default function MessageThread({ nodes, onPin, onImport, onExportSynced }) {
   const ordered = useMemo(() => orderForThread(nodes ?? []), [nodes]);
   const bottomRef = useRef(null);
+  const [exportingId, setExportingId] = useState(null);
+  const [exportResult, setExportResult] = useState(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [ordered]);
+
+  async function handleExport(node) {
+    if (!node.id) return;
+    setExportingId(node.id);
+    setExportResult(null);
+    try {
+      const r = await api.exportClaude(node.id, true);
+      setExportResult(r);
+      // If new turns came back from CC, the branch head moved — let the
+      // parent refetch so the thread reflects the appended messages.
+      if (r?.synced_from_claude > 0 && onExportSynced) onExportSynced();
+    } catch (e) {
+      setExportResult({ error: String(e) });
+    } finally {
+      setExportingId(null);
+    }
+  }
 
   const roleBadge = (role) => ({
     user: "bg-blue-50 text-blue-700",
@@ -67,6 +87,44 @@ export default function MessageThread({ nodes, onPin, onImport }) {
         </div>
       ))}
       <div ref={bottomRef} />
+
+      {exportResult && (
+        <div className="fixed bottom-4 right-4 max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg z-50">
+          {exportResult.error ? (
+            <>
+              <div className="text-sm font-semibold text-red-600 mb-1">Export failed</div>
+              <div className="text-xs text-[var(--color-text-dim)] break-all">{exportResult.error}</div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold text-[var(--color-text)] mb-1">
+                {exportResult.launched ? "Launched in Terminal" : "Export ready (run manually)"}
+              </div>
+              <div className="text-xs text-[var(--color-text-dim)] mb-2">
+                {exportResult.message_count} messages → session{" "}
+                <code className="font-[family-name:var(--font-mono)]">{exportResult.session_id?.slice(0, 8)}</code>
+                {exportResult.synced_from_claude > 0 && (
+                  <span className="ml-2 text-emerald-700">
+                    · synced {exportResult.synced_from_claude} from Claude
+                  </span>
+                )}
+              </div>
+              {exportResult.launch_error && (
+                <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2 break-all">
+                  Launch failed: {exportResult.launch_error}
+                </div>
+              )}
+              <pre className="text-[10px] bg-black/5 rounded px-2 py-1 overflow-x-auto whitespace-pre-wrap break-all">{exportResult.command}</pre>
+            </>
+          )}
+          <button
+            onClick={() => setExportResult(null)}
+            className="mt-2 text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 }
