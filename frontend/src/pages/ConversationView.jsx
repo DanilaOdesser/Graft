@@ -32,6 +32,8 @@ export default function ConversationView() {
   const [summarizeBranchName, setSummarizeBranchName] = useState("");
   const [summarizeError, setSummarizeError] = useState("");
   const [summarizing, setSummarizing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState(null);
 
   // Load conversation + branches
   useEffect(() => {
