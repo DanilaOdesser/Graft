@@ -162,14 +162,6 @@ def build_sql(data: dict) -> str:
          for nt in data["node_tags"]],
     ))
 
-    # 12. branch_shares
-    out.append(insert("branch_shares",
-        ["id", "branch_id", "shared_with", "permission", "created_at"],
-        [[to_uuid(s["id"]), to_uuid(s["branch_id"]),
-          to_uuid(s["shared_with"]) if s["shared_with"] else None,
-          s["permission"], s["created_at"]] for s in data["branch_shares"]],
-    ))
-
     out.append("COMMIT;\n")
     return "".join(out)
 
@@ -219,7 +211,6 @@ def main() -> int:
         "context_imports": len(data["context_imports"]),
         "node_summaries": len(data["node_summaries"]),
         "node_tags": len(data["node_tags"]),
-        "branch_shares": len(data["branch_shares"]),
     }
     print("seed: ok")
     for table, n in counts.items():

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import SearchResults from "../components/SearchResults";
@@ -11,13 +11,28 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [importTarget, setImportTarget] = useState(null);
   const [searched, setSearched] = useState(false);
+  const [allTags, setAllTags] = useState([]);
+  const [selectedTag, setSelectedTag] = useState(null);
+
+  useEffect(() => {
+    api.getTags().then(setAllTags).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!searched || !query.trim()) return;
+    setLoading(true);
+    api.search(query, user.id, 20, selectedTag || undefined)
+      .then((data) => setResults(Array.isArray(data) ? data : []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
+  }, [selectedTag]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
     try {
-      const data = await api.search(query, user.id);
+      const data = await api.search(query, user.id, 20, selectedTag || undefined);
       setResults(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Search failed:", err);
@@ -54,6 +69,23 @@ export default function SearchPage() {
               {loading ? "Searching..." : "Search"}
             </button>
           </div>
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-3">
+              {allTags.map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => setSelectedTag(selectedTag === tag.name ? null : tag.name)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                    selectedTag === tag.name
+                      ? "border-[var(--color-blue)] bg-[var(--color-blue-dim)] text-[var(--color-blue)] font-medium"
+                      : "border-[var(--color-border)] text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:border-[var(--color-border-bright)]"
+                  }`}
+                >
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-6">

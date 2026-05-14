@@ -186,16 +186,6 @@ CREATE TABLE node_tags (
 
 CREATE INDEX idx_node_tags_tag ON node_tags(tag_id);
 
-CREATE TABLE branch_shares (
-    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    branch_id   UUID        NOT NULL REFERENCES branches(id),
-    shared_with UUID        REFERENCES users(id),  -- NULL = public
-    permission  VARCHAR(20) NOT NULL
-                CHECK (permission IN ('view', 'fork', 'comment')),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (branch_id, shared_with)
-);
-
 -- ---------- claude_exports ------------------------------------------------
 -- Bookkeeping for Claude Code round-trip sessions. Written by the export
 -- endpoint; read on the next export click so any new CC turns get appended

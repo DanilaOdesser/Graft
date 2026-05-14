@@ -41,8 +41,11 @@ export const api = {
     request(`/nodes/${id}`),
   getConversationNodes: (convId) =>
     request(`/conversations/${convId}/nodes`),
-  search: (q, userId, k = 20) =>
-    request(`/search?q=${encodeURIComponent(q)}&user_id=${userId}&k=${k}`),
+  search: (q, userId, k = 20, tag = null) => {
+    const params = new URLSearchParams({ q, user_id: userId, k: String(k) });
+    if (tag) params.append("tag", tag);
+    return request(`/search?${params.toString()}`);
+  },
   getDivergence: (branchA, branchB) =>
     request(`/branches/${branchA}/diverge/${branchB}`),
   createPin: (branchId, data) =>
@@ -65,4 +68,12 @@ export const api = {
     request("/users/register", { method: "POST", body: JSON.stringify(data) }),
   loginUser: (data) =>
     request("/users/login", { method: "POST", body: JSON.stringify(data) }),
+  getTags: () =>
+    request("/tags"),
+  createTag: (name) =>
+    request("/tags", { method: "POST", body: JSON.stringify({ name }) }),
+  getNodeTags: (nodeId) =>
+    request(`/nodes/${nodeId}/tags`),
+  setNodeTags: (nodeId, tagIds) =>
+    request(`/nodes/${nodeId}/tags`, { method: "PUT", body: JSON.stringify({ tag_ids: tagIds }) }),
 };

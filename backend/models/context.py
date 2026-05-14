@@ -78,15 +78,3 @@ class ClaudeExport(Base):
     last_imported_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
 
-class BranchShare(Base):
-    __tablename__ = "branch_shares"
-    __table_args__ = (
-        UniqueConstraint("branch_id", "shared_with"),
-        CheckConstraint("permission IN ('view', 'fork', 'comment')"),
-    )
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=False)
-    shared_with = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    permission = Column(String(20), nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)

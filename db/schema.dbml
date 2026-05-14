@@ -149,14 +149,3 @@ Table node_tags {
   }
 }
 
-Table branch_shares {
-  id uuid [pk]
-  branch_id uuid [not null, ref: > branches.id]
-  shared_with uuid [ref: > users.id]   // null = public
-  permission varchar(20) [not null]     // 'view' | 'fork' | 'comment'
-  created_at timestamptz [not null, default: `now()`]
-
-  Indexes {
-    (branch_id, shared_with) [unique]
-  }
-}

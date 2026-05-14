@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
@@ -8,6 +8,8 @@ import SendBox from "../components/SendBox";
 import PinsPanel from "../components/PinsPanel";
 import ConversationGraph from "../components/ConversationGraph";
 import ImportModal from "../components/ImportModal";
+import TagPopover from "../components/TagPopover";
+import { tagColor } from "../tagColor";
 
 export default function ConversationView() {
   const { user } = useAuth();
@@ -36,6 +38,9 @@ export default function ConversationView() {
   const [summarizing, setSummarizing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
+  const [selectedNodeTags, setSelectedNodeTags] = useState([]);
+  const [showTagEditor, setShowTagEditor] = useState(false);
+  const selectedGraphNodeRef = useRef(null);
 
   // Load conversation + branches
   useEffect(() => {
@@ -53,7 +58,10 @@ export default function ConversationView() {
   const refreshContext = useCallback(() => {
     if (!selected?.head_node_id) return;
     api.getContext(selected.head_node_id, 8000)
-      .then((data) => setContextNodes(Array.isArray(data) ? data : data?.nodes || []))
+      .then((data) => {
+        const nodes = Array.isArray(data) ? data : data?.nodes || [];
+        setContextNodes(nodes);
+      })
       .catch(() => setContextNodes([]));
   }, [selected]);
 
@@ -132,6 +140,13 @@ export default function ConversationView() {
       });
       setBranches((prev) => prev.map((b) => (b.id === branch.id ? branch : b)));
       setSelected((prev) => (prev?.id === branch.id ? branch : prev));
+    });
+
+    es.addEventListener("node_tags_updated", (e) => {
+      const { node_id, tags } = JSON.parse(e.data);
+      if (node_id === selectedGraphNodeRef.current?.id) {
+        setSelectedNodeTags(Array.isArray(tags) ? tags : []);
+      }
     });
 
     es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
@@ -215,12 +230,20 @@ export default function ConversationView() {
 
   const handleGraphNodeSelect = (nodeData) => {
     setSelectedGraphNode(nodeData);
+    selectedGraphNodeRef.current = nodeData;
+    setShowTagEditor(false);
     setMakingBranch(false);
     setNewBranchName("");
     setBranchCreateError("");
     setMakingSummary(false);
     setSummarizeBranchName("");
     setSummarizeError("");
+    // fetch tags for this node
+    if (nodeData?.id) {
+      api.getNodeTags(nodeData.id)
+        .then(tags => setSelectedNodeTags(Array.isArray(tags) ? tags : []))
+        .catch(() => setSelectedNodeTags([]));
+    }
   };
 
   const handleCreateBranchFromNode = async () => {
@@ -449,6 +472,41 @@ export default function ConversationView() {
                       {selectedGraphNode.content}
                     </p>
                   </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] font-semibold mb-1.5">Tags</div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {selectedNodeTags.length === 0 && (
+                      <span className="text-[10px] text-[var(--color-text-faint)]">No tags</span>
+                    )}
+                    {selectedNodeTags.map(t => (
+                      <span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded-full ${tagColor(t.name)}`}>{t.name}</span>
+                    ))}
+                  </div>
+                  {!showTagEditor ? (
+                    <button
+                      onClick={() => setShowTagEditor(true)}
+                      className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-blue)] px-2 py-1 rounded border border-[var(--color-border)] hover:border-[var(--color-blue)] transition-colors w-full text-left"
+                    >
+                      + Manage tags
+                    </button>
+                  ) : (
+                    <div>
+                      <TagPopover
+                        inline
+                        nodeId={selectedGraphNode.id}
+                        onTagsChanged={(nodeId, tags) => setSelectedNodeTags(tags)}
+                      />
+                      <button
+                        onClick={() => setShowTagEditor(false)}
+                        className="mt-1 text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
