@@ -34,6 +34,7 @@ def list_tags(db: Session = Depends(get_db)):
 async def create_tag(body: TagCreate, response: Response, db: Session = Depends(get_db)):
     existing = db.query(Tag).filter(Tag.name.ilike(body.name)).first()
     if existing:
+        response.status_code = 200
         return _tag_dict(existing)
     tag = Tag(id=uuid.uuid4(), name=body.name)
     db.add(tag)
