@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../api";
 import { tagColor, tagDotColor } from "../tagColor";
 
-export default function TagPopover({ nodeId, onClose, onTagsChanged }) {
+export default function TagPopover({ nodeId, onClose, onTagsChanged, inline = false }) {
   const popoverRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -25,25 +25,27 @@ export default function TagPopover({ nodeId, onClose, onTagsChanged }) {
     inputRef.current?.focus();
   }, []);
 
-  // Close on Escape
+  // Close on Escape (only when not inline)
   useEffect(() => {
+    if (inline) return;
     const handleKey = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onClose?.();
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  }, [onClose, inline]);
 
-  // Close on click outside
+  // Close on click outside (only when not inline)
   useEffect(() => {
+    if (inline) return;
     const handleMouseDown = (e) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        onClose();
+        onClose?.();
       }
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [onClose]);
+  }, [onClose, inline]);
 
   const normalizedInput = inputValue.trim().toLowerCase();
 
@@ -90,7 +92,10 @@ export default function TagPopover({ nodeId, onClose, onTagsChanged }) {
   return (
     <div
       ref={popoverRef}
-      className="absolute z-50 w-52 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg p-2"
+      className={inline
+        ? "w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-2 mt-1"
+        : "absolute z-[200] w-52 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg p-2"
+      }
     >
       <input
         ref={inputRef}

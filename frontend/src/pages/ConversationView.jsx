@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
@@ -8,6 +8,8 @@ import SendBox from "../components/SendBox";
 import PinsPanel from "../components/PinsPanel";
 import ConversationGraph from "../components/ConversationGraph";
 import ImportModal from "../components/ImportModal";
+import TagPopover from "../components/TagPopover";
+import { tagColor } from "../tagColor";
 
 export default function ConversationView() {
   const { user } = useAuth();
@@ -36,7 +38,9 @@ export default function ConversationView() {
   const [summarizing, setSummarizing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
-  const [nodeTags, setNodeTags] = useState(new Map());
+  const [selectedNodeTags, setSelectedNodeTags] = useState([]);
+  const [showTagEditor, setShowTagEditor] = useState(false);
+  const selectedGraphNodeRef = useRef(null);
 
   // Load conversation + branches
   useEffect(() => {
@@ -57,18 +61,6 @@ export default function ConversationView() {
       .then((data) => {
         const nodes = Array.isArray(data) ? data : data?.nodes || [];
         setContextNodes(nodes);
-        // batch-fetch tags for all visible nodes
-        const ids = nodes.map(n => n.id).filter(Boolean);
-        if (ids.length > 0) {
-          Promise.all(ids.map(nodeId => api.getNodeTags(nodeId).catch(() => [])))
-            .then(results => {
-              setNodeTags(prev => {
-                const next = new Map(prev);
-                ids.forEach((id, i) => next.set(id, results[i]));
-                return next;
-              });
-            });
-        }
       })
       .catch(() => setContextNodes([]));
   }, [selected]);
@@ -152,11 +144,9 @@ export default function ConversationView() {
 
     es.addEventListener("node_tags_updated", (e) => {
       const { node_id, tags } = JSON.parse(e.data);
-      setNodeTags(prev => {
-        const next = new Map(prev);
-        next.set(node_id, tags);
-        return next;
-      });
+      if (node_id === selectedGraphNodeRef.current?.id) {
+        setSelectedNodeTags(Array.isArray(tags) ? tags : []);
+      }
     });
 
     es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
@@ -220,14 +210,6 @@ export default function ConversationView() {
     }
   };
 
-  const handleTagsChanged = (nodeId, tags) => {
-    setNodeTags(prev => {
-      const next = new Map(prev);
-      next.set(nodeId, tags);
-      return next;
-    });
-  };
-
   const handlePin = async () => {
     if (!pinningNode || !selected) return;
     await api.createPin(selected.id, {
@@ -248,12 +230,20 @@ export default function ConversationView() {
 
   const handleGraphNodeSelect = (nodeData) => {
     setSelectedGraphNode(nodeData);
+    selectedGraphNodeRef.current = nodeData;
+    setShowTagEditor(false);
     setMakingBranch(false);
     setNewBranchName("");
     setBranchCreateError("");
     setMakingSummary(false);
     setSummarizeBranchName("");
     setSummarizeError("");
+    // fetch tags for this node
+    if (nodeData?.id) {
+      api.getNodeTags(nodeData.id)
+        .then(tags => setSelectedNodeTags(Array.isArray(tags) ? tags : []))
+        .catch(() => setSelectedNodeTags([]));
+    }
   };
 
   const handleCreateBranchFromNode = async () => {
@@ -415,8 +405,6 @@ export default function ConversationView() {
                   onPin={(node) => setPinningNode(node)}
                   onImport={(node) => setImportTarget(node)}
                   onExportSynced={handleTurnComplete}
-                  nodeTags={nodeTags}
-                  onTagsChanged={handleTagsChanged}
                 />
                 <SendBox
                   headNodeId={selected?.head_node_id}
@@ -484,6 +472,41 @@ export default function ConversationView() {
                       {selectedGraphNode.content}
                     </p>
                   </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)] font-semibold mb-1.5">Tags</div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {selectedNodeTags.length === 0 && (
+                      <span className="text-[10px] text-[var(--color-text-faint)]">No tags</span>
+                    )}
+                    {selectedNodeTags.map(t => (
+                      <span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded-full ${tagColor(t.name)}`}>{t.name}</span>
+                    ))}
+                  </div>
+                  {!showTagEditor ? (
+                    <button
+                      onClick={() => setShowTagEditor(true)}
+                      className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-blue)] px-2 py-1 rounded border border-[var(--color-border)] hover:border-[var(--color-blue)] transition-colors w-full text-left"
+                    >
+                      + Manage tags
+                    </button>
+                  ) : (
+                    <div>
+                      <TagPopover
+                        inline
+                        nodeId={selectedGraphNode.id}
+                        onTagsChanged={(nodeId, tags) => setSelectedNodeTags(tags)}
+                      />
+                      <button
+                        onClick={() => setShowTagEditor(false)}
+                        className="mt-1 text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
