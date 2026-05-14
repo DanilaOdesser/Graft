@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import uuid
+from typing import Optional
 
 from db import get_db
 
@@ -71,6 +72,30 @@ ORDER BY rank DESC, n.created_at DESC
 LIMIT :k;
 """
 
+SEARCH_SQL_TAG = """
+SELECT
+  n.id              AS node_id,
+  n.content,
+  n.role,
+  n.created_at,
+  b.id              AS branch_id,
+  b.name            AS branch_name,
+  c.id              AS conversation_id,
+  c.title           AS conversation_title,
+  ts_rank(n.content_tsv, websearch_to_tsquery('english', :query_text)) AS rank
+FROM nodes n
+JOIN branches b      ON b.id = n.branch_id
+JOIN conversations c ON c.id = n.conversation_id
+JOIN node_tags nt    ON nt.node_id = n.id
+JOIN tags t          ON t.id = nt.tag_id
+WHERE c.owner_id = :user_id
+  AND b.is_archived = false
+  AND n.content_tsv @@ websearch_to_tsquery('english', :query_text)
+  AND t.name ILIKE :tag_name
+ORDER BY rank DESC, n.created_at DESC
+LIMIT :k;
+"""
+
 
 @router.get("/branches/{branch_a}/diverge/{branch_b}")
 def branch_divergence(
@@ -97,12 +122,18 @@ def search_nodes(
     q: str = Query(..., min_length=1),
     user_id: uuid.UUID = Query(...),
     k: int = Query(default=20, ge=1, le=100),
+    tag: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    result = db.execute(
-        text(SEARCH_SQL),
-        {"query_text": q, "user_id": str(user_id), "k": k},
-    )
+    # Choose SQL based on whether tag filter is provided
+    sql = SEARCH_SQL_TAG if tag else SEARCH_SQL
+    params = {"query_text": q, "user_id": str(user_id), "k": k}
+
+    # Add tag_name parameter if tag is provided
+    if tag:
+        params["tag_name"] = tag
+
+    result = db.execute(text(sql), params)
     rows = result.mappings().all()
     return [
         {
