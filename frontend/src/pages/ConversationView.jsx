@@ -36,6 +36,7 @@ export default function ConversationView() {
   const [summarizing, setSummarizing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
+  const [nodeTags, setNodeTags] = useState(new Map());
 
   // Load conversation + branches
   useEffect(() => {
@@ -53,7 +54,22 @@ export default function ConversationView() {
   const refreshContext = useCallback(() => {
     if (!selected?.head_node_id) return;
     api.getContext(selected.head_node_id, 8000)
-      .then((data) => setContextNodes(Array.isArray(data) ? data : data?.nodes || []))
+      .then((data) => {
+        const nodes = Array.isArray(data) ? data : data?.nodes || [];
+        setContextNodes(nodes);
+        // batch-fetch tags for all visible nodes
+        const ids = nodes.map(n => n.id).filter(Boolean);
+        if (ids.length > 0) {
+          Promise.all(ids.map(id => api.getNodeTags(id).catch(() => [])))
+            .then(results => {
+              setNodeTags(prev => {
+                const next = new Map(prev);
+                ids.forEach((id, i) => next.set(id, results[i]));
+                return next;
+              });
+            });
+        }
+      })
       .catch(() => setContextNodes([]));
   }, [selected]);
 
@@ -134,6 +150,15 @@ export default function ConversationView() {
       setSelected((prev) => (prev?.id === branch.id ? branch : prev));
     });
 
+    es.addEventListener("node_tags_updated", (e) => {
+      const { node_id, tags } = JSON.parse(e.data);
+      setNodeTags(prev => {
+        const next = new Map(prev);
+        next.set(node_id, tags);
+        return next;
+      });
+    });
+
     es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
 
     return () => es.close();
@@ -193,6 +218,14 @@ export default function ConversationView() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleTagsChanged = (nodeId, tags) => {
+    setNodeTags(prev => {
+      const next = new Map(prev);
+      next.set(nodeId, tags);
+      return next;
+    });
   };
 
   const handlePin = async () => {
@@ -382,6 +415,8 @@ export default function ConversationView() {
                   onPin={(node) => setPinningNode(node)}
                   onImport={(node) => setImportTarget(node)}
                   onExportSynced={handleTurnComplete}
+                  nodeTags={nodeTags}
+                  onTagsChanged={handleTagsChanged}
                 />
                 <SendBox
                   headNodeId={selected?.head_node_id}

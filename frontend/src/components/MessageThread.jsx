@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import TagPopover from "./TagPopover";
+import { tagColor } from "../tagColor";
 
 // Pins and imports are reference context, rendered at the top. The actual
 // chat flow (ancestors) sits below in chronological order so the newest
@@ -18,11 +20,12 @@ function orderForThread(nodes) {
   });
 }
 
-export default function MessageThread({ nodes, onPin, onImport, onExportSynced }) {
+export default function MessageThread({ nodes, onPin, onImport, onExportSynced, nodeTags = new Map(), onTagsChanged }) {
   const ordered = useMemo(() => orderForThread(nodes ?? []), [nodes]);
   const bottomRef = useRef(null);
   const [exportingId, setExportingId] = useState(null);
   const [exportResult, setExportResult] = useState(null);
+  const [taggingNodeId, setTaggingNodeId] = useState(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -67,6 +70,9 @@ export default function MessageThread({ nodes, onPin, onImport, onExportSynced }
           <div className="flex items-center gap-1.5 mb-1.5">
             <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${roleBadge(n.role || n.node_type)}`}>{n.role || n.node_type}</span>
             {n.source && <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceBadge(n.source)}`}>{n.source}</span>}
+            {(nodeTags.get(n.id) ?? []).map(t => (
+              <span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded-full ${tagColor(t.name)}`}>{t.name}</span>
+            ))}
             <span className="ml-auto text-[10px] font-[family-name:var(--font-mono)] text-[var(--color-text-faint)]">{n.token_count}tok</span>
           </div>
           {n._loading ? (
@@ -80,6 +86,21 @@ export default function MessageThread({ nodes, onPin, onImport, onExportSynced }
           )}
           {!n._loading && (
             <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="relative">
+                <button
+                  onClick={() => setTaggingNodeId(taggingNodeId === n.id ? null : n.id)}
+                  className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-violet)] px-2 py-0.5 rounded hover:bg-[var(--color-violet-dim)] transition-colors"
+                >
+                  Tag
+                </button>
+                {taggingNodeId === n.id && (
+                  <TagPopover
+                    nodeId={n.id}
+                    onClose={() => setTaggingNodeId(null)}
+                    onTagsChanged={onTagsChanged}
+                  />
+                )}
+              </div>
               {onPin && <button onClick={() => onPin(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-amber)] px-2 py-0.5 rounded hover:bg-[var(--color-amber-dim)] transition-colors">Pin</button>}
               {onImport && <button onClick={() => onImport(n)} className="text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-emerald)] px-2 py-0.5 rounded hover:bg-[var(--color-emerald-dim)] transition-colors">Import to...</button>}
               <button
