@@ -91,7 +91,7 @@ JOIN tags t          ON t.id = nt.tag_id
 WHERE c.owner_id = :user_id
   AND b.is_archived = false
   AND n.content_tsv @@ websearch_to_tsquery('english', :query_text)
-  AND t.name ILIKE :tag_name
+  AND LOWER(t.name) = LOWER(:tag_name)
 ORDER BY rank DESC, n.created_at DESC
 LIMIT :k;
 """

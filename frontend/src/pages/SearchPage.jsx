@@ -19,7 +19,12 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (searched && query.trim()) handleSearch();
+    if (!searched || !query.trim()) return;
+    setLoading(true);
+    api.search(query, user.id, 20, selectedTag || undefined)
+      .then((data) => setResults(Array.isArray(data) ? data : []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
   }, [selectedTag]);
 
   const handleSearch = async () => {

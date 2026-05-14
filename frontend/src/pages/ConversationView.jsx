@@ -60,7 +60,7 @@ export default function ConversationView() {
         // batch-fetch tags for all visible nodes
         const ids = nodes.map(n => n.id).filter(Boolean);
         if (ids.length > 0) {
-          Promise.all(ids.map(id => api.getNodeTags(id).catch(() => [])))
+          Promise.all(ids.map(nodeId => api.getNodeTags(nodeId).catch(() => [])))
             .then(results => {
               setNodeTags(prev => {
                 const next = new Map(prev);

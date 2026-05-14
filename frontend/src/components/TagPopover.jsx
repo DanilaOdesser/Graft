@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api";
-import { tagColor } from "../tagColor";
+import { tagColor, tagDotColor } from "../tagColor";
 
 export default function TagPopover({ nodeId, onClose, onTagsChanged }) {
   const popoverRef = useRef(null);
@@ -102,7 +102,7 @@ export default function TagPopover({ nodeId, onClose, onTagsChanged }) {
       />
       <div className="mt-1 max-h-48 overflow-y-auto">
         {filteredTags.map((tag) => {
-          const colorClass = tagColor(tag.name).split(" ")[0];
+          const colorClass = tagDotColor(tag.name);
           const applied = appliedIds.has(tag.id);
           return (
             <div
