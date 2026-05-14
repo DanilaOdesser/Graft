@@ -17,6 +17,7 @@ A person who owns conversations and performs actions (creating branches, pinning
 | id | UUID | PK | Unique identifier |
 | email | VARCHAR(255) | UNIQUE, NOT NULL | Login credential |
 | display_name | VARCHAR(100) | NOT NULL | Shown in UI |
+| password_hash | TEXT | Nullable | Hashed password (PBKDF2-SHA256) |
 | created_at | TIMESTAMPTZ | NOT NULL, default now() | Account creation time |
 
 A user can own many conversations. A user is referenced by branches (created_by), pins (pinned_by), imports (imported_by), and shares (shared_with).
@@ -184,7 +185,7 @@ Many-to-many relationship between nodes and tags.
 
 **PK:** (node_id, tag_id)
 
-#### Branch Share
+#### Branch Share *(designed but not implemented in v1 — table dropped in migration 002)*
 
 Grants another user (or the public) access to a branch with a specific permission level.
 
@@ -338,7 +339,7 @@ These are the core workflows that drive Graft's value. Each scenario maps to spe
 
 ---
 
-### Scenario 8: Share a branch with a teammate
+### Scenario 8: Share a branch with a teammate *(designed but not implemented in v1)*
 
 **Actor:** User
 **Trigger:** User wants a second opinion on a branch or wants to let a teammate fork it.

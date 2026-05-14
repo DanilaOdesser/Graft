@@ -124,7 +124,7 @@ A reusable label for categorizing nodes by concern (e.g. "schema-design", "api-e
 
 ---
 
-### Branch Share
+### Branch Share *(designed but not implemented in v1 — table dropped in migration 002)*
 
 A permission grant allowing another user (or the public) to access a branch. Permission levels are `view` (read-only), `fork` (create a branch based on this one), and `comment` (view plus add comments).
 

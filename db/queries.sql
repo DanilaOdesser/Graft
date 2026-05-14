@@ -5,6 +5,10 @@
 -- -----------------------------------------------------------------------------
 -- QUERY 1: Context assembly at a node, under a token budget.
 -- -----------------------------------------------------------------------------
+-- Business purpose: "Build the AI's memory for a single conversation turn —
+-- what should the AI remember?" Assembles the context window from ancestry,
+-- pinned nodes, and imports, then truncates to fit the token budget.
+--
 -- This is the hot-path query — runs on every agent turn.
 -- Given a node N (the user's current position) and a token budget B, return
 -- the ordered set of nodes that should be assembled into the LLM context:
@@ -116,6 +120,9 @@ ORDER BY rank;
 -- -----------------------------------------------------------------------------
 -- QUERY 2: Branch divergence report.
 -- -----------------------------------------------------------------------------
+-- Business purpose: "Compare two conversation branches — what did each explore
+-- that the other didn't?" Helps users decide whether to merge branches.
+--
 -- Compare two branches A and B. Return:
 --   - their lowest common ancestor,
 --   - count of nodes only on A's path,
@@ -178,6 +185,9 @@ SELECT
 -- QUERY 3: Full-text search across the user's conversations,
 --          with branch context.
 -- -----------------------------------------------------------------------------
+-- Business purpose: "Search all conversations for relevant context to
+-- cherry-pick into the current branch." Enables cross-conversation reuse.
+--
 -- User types a natural-language query; Postgres FTS ranks the K most relevant
 -- nodes across all of the user's conversations, returning each match with its
 -- branch and conversation context so it can be shown for cherry-picking.

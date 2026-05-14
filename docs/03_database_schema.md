@@ -19,6 +19,7 @@ CREATE TABLE users (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     email           VARCHAR(255) UNIQUE NOT NULL,
     display_name    VARCHAR(100) NOT NULL,
+    password_hash   TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -317,7 +318,7 @@ CREATE INDEX idx_node_tags_tag ON node_tags(tag_id);
 
 ```sql
 -- ============================================================================
--- BRANCH_SHARES
+-- BRANCH_SHARES (designed but not implemented in v1 — dropped in migration 002)
 -- ============================================================================
 
 CREATE TABLE branch_shares (
@@ -372,6 +373,7 @@ Table users {
   id uuid [pk]
   email varchar(255) [unique, not null]
   display_name varchar(100) [not null]
+  password_hash text
   created_at timestamptz [not null, default: `now()`]
 }
 
@@ -508,15 +510,22 @@ Table node_tags {
   }
 }
 
-Table branch_shares {
-  id uuid [pk]
+// ---------- Claude Code integration ----------
+
+Table claude_exports {
+  session_id uuid [pk]
+  conversation_id uuid [not null, ref: > conversations.id]
   branch_id uuid [not null, ref: > branches.id]
-  shared_with uuid [ref: > users.id]   // null = public
-  permission varchar(20) [not null]     // 'view' | 'fork' | 'comment'
-  created_at timestamptz [not null, default: `now()`]
+  source_node_id uuid [not null, ref: > nodes.id]
+  file_path text [not null]
+  cwd text [not null]
+  exported_message_count int [not null]
+  last_imported_uuid text
+  exported_at timestamptz [not null, default: `now()`]
+  last_imported_at timestamptz
 
   Indexes {
-    (branch_id, shared_with) [unique]
+    (branch_id, exported_at) [name: 'idx_claude_exports_branch']
   }
 }
 ```
@@ -537,6 +546,8 @@ Table branch_shares {
 | 8 | node_summaries | Summary mapping | (summary_node_id, summarized_node_id) | both -> nodes |
 | 9 | tags | Label | id | -- |
 | 10 | node_tags | Node-tag link | (node_id, tag_id) | node_id -> nodes, tag_id -> tags |
-| 11 | branch_shares | Access grant | id | branch_id -> branches, shared_with -> users |
+| 11 | claude_exports | CC round-trip session | session_id | conversation_id -> conversations, branch_id -> branches, source_node_id -> nodes |
 
-**Total: 11 tables, 1 trigger function, 10 explicit indexes (+ PK/unique indexes).**
+**Total: 11 active tables, 1 trigger function, 10+ explicit indexes (+ PK/unique indexes).**
+
+*Note: `branch_shares` was part of the original design but was dropped in migration 002. Its DDL is kept above for reference.*

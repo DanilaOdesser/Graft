@@ -22,7 +22,7 @@ Long agent conversations get bloated. You want to try something speculative with
 
 ![Database schema](db/schema.png)
 
-11 tables: `users` · `conversations` · `nodes` · `node_ancestry` · `branches` · `context_pins` · `context_imports` · `node_summaries` · `tags` · `node_tags` · `branch_shares`
+11 tables: `users` · `conversations` · `nodes` · `node_ancestry` · `branches` · `context_pins` · `context_imports` · `node_summaries` · `tags` · `node_tags` · `claude_exports`
 
 Full DDL: [`docs/03_database_schema.md`](docs/03_database_schema.md) · DBML: [`db/schema.dbml`](db/schema.dbml)
 
@@ -181,6 +181,20 @@ cd backend && pytest tests/test_commit_sse.py -v
 | GET | `/api/search?q=&user_id=&k=` | Full-text search (Query 3) |
 | GET | `/api/branches/{a}/diverge/{b}` | Branch divergence report (Query 2) |
 
+### Tags
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tags` | List all tags |
+| POST | `/api/tags` | Create a tag (idempotent) |
+| GET | `/api/nodes/{id}/tags` | Get tags for a node |
+| PUT | `/api/nodes/{id}/tags` | Replace tag set on a node |
+
+### Users
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/users/register` | Register a new user |
+| POST | `/api/users/login` | Login with email/password |
+
 ### SSE Event Types
 
 All mutation endpoints publish to `GET /api/conversations/{id}/stream`. The frontend listens and updates state in real time.
@@ -194,6 +208,7 @@ All mutation endpoints publish to `GET /api/conversations/{id}/stream`. The fron
 | `import_created` | `{ import }` |
 | `import_deleted` | `{ import_id }` |
 | `commit_created` | `{ node, branch, summarized_node_ids[] }` |
+| `node_tags_updated` | `{ node_id, tags[] }` |
 
 ---
 
@@ -206,7 +221,8 @@ Graft/
 ├── .env.example
 ├── render.yaml                        # Render Blueprint for backend deploy
 ├── backend/
-│   ├── main.py                        # FastAPI app — mounts all 7 routers
+│   ├── main.py                        # FastAPI app — mounts all 9 routers
+│   ├── helpers.py                     # Shared serialization helpers
 │   ├── db.py                          # SQLAlchemy engine + session
 │   ├── llm.py                         # Claude API client + stub fallback
 │   ├── sse.py                         # In-process asyncio pub/sub + heartbeat
@@ -223,7 +239,9 @@ Graft/
 │   │   ├── nodes.py                   # Node CRUD + summarize endpoint
 │   │   ├── context.py                 # Pins + imports endpoints
 │   │   ├── search.py                  # FTS search (Q3) + divergence (Q2)
-│   │   └── export.py                  # Export to Claude Code + sync-back
+│   │   ├── export.py                  # Export to Claude Code + sync-back
+│   │   ├── tags.py                    # Tag CRUD + node tag assignment
+│   │   └── users.py                   # User registration + login
 │   └── tests/
 │       └── test_commit_sse.py
 ├── frontend/
@@ -233,7 +251,9 @@ Graft/
 │   │   ├── pages/
 │   │   │   ├── ConversationList.jsx
 │   │   │   ├── ConversationView.jsx   # Main view: SSE listener, all state, graph+thread tabs
-│   │   │   └── SearchPage.jsx
+│   │   │   ├── SearchPage.jsx         # Full-text search + tag facets
+│   │   │   ├── LoginPage.jsx          # User authentication
+│   │   │   └── RegisterPage.jsx       # User registration
 │   │   └── components/
 │   │       ├── BranchSidebar.jsx      # Branch list + commit input
 │   │       ├── ConversationGraph.jsx  # ReactFlow commit graph + search overlay
@@ -241,7 +261,8 @@ Graft/
 │   │       ├── SendBox.jsx            # Chat input with optimistic send
 │   │       ├── PinsPanel.jsx
 │   │       ├── ImportModal.jsx
-│   │       └── SearchResults.jsx
+│   │       ├── SearchResults.jsx
+│   │       └── TagPopover.jsx         # Tag editor popover
 ├── db/
 │   ├── schema.dbml                    # dbdiagram.io source
 │   ├── schema.png                     # Schema diagram image

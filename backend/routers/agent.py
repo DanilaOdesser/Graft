@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db import get_db
+from helpers import branch_to_dict, node_to_dict, token_count
 from llm import call_llm
 from models.core import Branch, Node
 from routers.branches import QUERY_1_CONTEXT_ASSEMBLY
@@ -25,37 +26,6 @@ from schemas import AgentTurnRequest
 from sse import publish
 
 router = APIRouter()
-
-
-def _token_count(content: str) -> int:
-    return int(len(content.split()) * 1.3)
-
-
-def _branch_to_dict(b: Branch) -> dict:
-    return {
-        "id": str(b.id),
-        "conversation_id": str(b.conversation_id),
-        "name": b.name,
-        "head_node_id": str(b.head_node_id) if b.head_node_id else None,
-        "base_node_id": str(b.base_node_id) if b.base_node_id else None,
-        "created_by": str(b.created_by),
-        "is_archived": b.is_archived,
-        "created_at": str(b.created_at),
-    }
-
-
-def _node_to_dict(n: Node) -> dict:
-    return {
-        "id": str(n.id),
-        "conversation_id": str(n.conversation_id),
-        "parent_id": str(n.parent_id) if n.parent_id else None,
-        "branch_id": str(n.branch_id),
-        "node_type": n.node_type,
-        "role": n.role,
-        "content": n.content,
-        "token_count": n.token_count,
-        "created_at": str(n.created_at),
-    }
 
 
 @router.post("/agent/turn")
@@ -83,7 +53,7 @@ async def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         node_type="message",
         role="user",
         content=body.user_message,
-        token_count=_token_count(body.user_message),
+        token_count=token_count(body.user_message),
     )
     db.add(user_node)
     db.flush()
@@ -145,7 +115,7 @@ async def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
         node_type="message",
         role="assistant",
         content=reply_text,
-        token_count=_token_count(reply_text),
+        token_count=token_count(reply_text),
     )
     db.add(assistant_node)
     db.flush()
@@ -160,13 +130,13 @@ async def agent_turn(body: AgentTurnRequest, db: Session = Depends(get_db)):
     db.refresh(user_node)
     db.refresh(assistant_node)
     db.refresh(branch)
-    await publish(str(parent.conversation_id), "node_created", {"node": _node_to_dict(user_node)})
-    await publish(str(parent.conversation_id), "node_created", {"node": _node_to_dict(assistant_node)})
-    await publish(str(parent.conversation_id), "branch_updated", {"branch": _branch_to_dict(branch)})
+    await publish(str(parent.conversation_id), "node_created", {"node": node_to_dict(user_node)})
+    await publish(str(parent.conversation_id), "node_created", {"node": node_to_dict(assistant_node)})
+    await publish(str(parent.conversation_id), "branch_updated", {"branch": branch_to_dict(branch)})
 
     return {
-        "user_node": _node_to_dict(user_node),
-        "assistant_node": _node_to_dict(assistant_node),
+        "user_node": node_to_dict(user_node),
+        "assistant_node": node_to_dict(assistant_node),
         "context_used": {
             "node_count": len(context_nodes),
             "total_tokens": sum(n["token_count"] for n in context_nodes),

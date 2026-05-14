@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from db import get_db
+from helpers import branch_to_dict, node_to_dict, token_count
 from models.context import NodeSummary
 from models.core import Branch, Node
 from schemas import BranchCreate
@@ -102,19 +103,6 @@ ORDER BY rank;
 """
 
 
-def _branch_to_dict(b: Branch) -> dict:
-    return {
-        "id": str(b.id),
-        "conversation_id": str(b.conversation_id),
-        "name": b.name,
-        "head_node_id": str(b.head_node_id) if b.head_node_id else None,
-        "base_node_id": str(b.base_node_id) if b.base_node_id else None,
-        "created_by": str(b.created_by),
-        "is_archived": b.is_archived,
-        "created_at": str(b.created_at),
-    }
-
-
 @router.post("/conversations/{conv_id}/branches", status_code=201)
 async def create_branch(conv_id: uuid.UUID, body: BranchCreate, db: Session = Depends(get_db)):
     # Verify the fork node exists in this conversation.
@@ -139,7 +127,7 @@ async def create_branch(conv_id: uuid.UUID, body: BranchCreate, db: Session = De
         db.rollback()
         raise HTTPException(status_code=409, detail="Branch name already used in this conversation")
     db.refresh(branch)
-    branch_dict = _branch_to_dict(branch)
+    branch_dict = branch_to_dict(branch)
     await publish(str(conv_id), "branch_updated", {"branch": branch_dict})
     return branch_dict
 
@@ -149,7 +137,7 @@ def get_branch(branch_id: uuid.UUID, db: Session = Depends(get_db)):
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
-    return _branch_to_dict(branch)
+    return branch_to_dict(branch)
 
 
 @router.post("/branches/{branch_id}/archive", status_code=204)
@@ -218,7 +206,7 @@ async def commit_branch(
         node_type="summary",
         role=None,
         content=content,
-        token_count=int(len(content.split()) * 1.3),
+        token_count=token_count(content),
     )
     db.add(summary_node)
     db.flush()
@@ -251,7 +239,7 @@ async def commit_branch(
     }
     await publish(str(branch.conversation_id), "commit_created", {
         "node": node_dict,
-        "branch": _branch_to_dict(branch),
+        "branch": branch_to_dict(branch),
         "summarized_node_ids": [str(n.id) for n in uncommitted],
     })
 
