@@ -692,24 +692,5 @@
     { "node_id": "n-19", "tag_id": "t-decision" },
     { "node_id": "n-27", "tag_id": "t-decision" },
     { "node_id": "n-29", "tag_id": "t-api" }
-  ],
-
-  "branch_shares": [
-    {
-      "_why": "Alex shares the S3 spike branch with teammate Jamie for review before deciding to go with Cloudinary instead",
-      "id": "share-01",
-      "branch_id": "br-s3-approach",
-      "shared_with": "u-jamie",
-      "permission": "comment",
-      "created_at": "2026-05-04T12:00:00Z"
-    },
-    {
-      "_why": "The main branch is shared publicly for the whole team to view the integrated result",
-      "id": "share-02",
-      "branch_id": "br-main",
-      "shared_with": null,
-      "permission": "view",
-      "created_at": "2026-05-06T17:00:00Z"
-    }
   ]
 }

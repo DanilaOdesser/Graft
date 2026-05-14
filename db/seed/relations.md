@@ -69,7 +69,7 @@ n-01 [system] "You are an expert full-stack developer..."          ── main
 ```
 u-alex ──owns──→ conv-recipebox
 ```
-Alex owns the single conversation. Jamie exists as a collaborator (see branch_shares).
+Alex owns the single conversation.
 
 ### conversations → branches (one-to-many)
 ```
@@ -249,17 +249,6 @@ Tags enable filtered browsing: "show me all architecture decisions" or "show me 
 
 ---
 
-### 8. Branch Shares — Collaboration
-
-| Share | Branch | Shared With | Permission |
-|-------|--------|------------|------------|
-| share-01 | spike/s3-upload | Jamie Lee | comment |
-| share-02 | main | (public) | view |
-
-Alex shares the S3 spike with Jamie for a second opinion before deciding on Cloudinary. After integration, the main branch is made public (shared_with = null) so the whole team can see the final result.
-
----
-
 ## Context Assembly Walkthrough (Query 1)
 
 Here's a concrete example of what Query 1 returns when assembling context for **n-31** (autocomplete, on `feat/search`) with a **budget of 2000 tokens**:
@@ -314,7 +303,7 @@ If the budget were raised to 3,000, n-15 and n-07 would also make it in.
 ```
 users ─────────────┐
   │                 │
-  │ owns            │ created_by / pinned_by / imported_by / shared_with
+  │ owns            │ created_by / pinned_by / imported_by
   ▼                 │
 conversations       │
   │                 │
@@ -323,8 +312,7 @@ conversations       │
   │     │  │ head_node_id, base_node_id
   │     │  │
   │     ├── context_pins ──────→ nodes
-  │     ├── context_imports ───→ nodes
-  │     └── branch_shares ────→ users
+  │     └── context_imports ───→ nodes
   │
   └── nodes
         │  ▲

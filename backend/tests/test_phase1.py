@@ -59,9 +59,9 @@ except Exception as e:
 try:
     from models.context import (
         NodeAncestry, ContextPin, ContextImport,
-        NodeSummary, Tag, NodeTag, BranchShare,
+        NodeSummary, Tag, NodeTag,
     )
-    test("Import context models (7 DEV-B models)", True)
+    test("Import context models (6 DEV-B models)", True)
 except Exception as e:
     test("Import context models", False, str(e))
 
@@ -81,7 +81,6 @@ expected_tables = {
     "NodeSummary": "node_summaries",
     "Tag": "tags",
     "NodeTag": "node_tags",
-    "BranchShare": "branch_shares",
 }
 
 all_models = {}
@@ -90,7 +89,7 @@ try:
         "User": User, "Conversation": Conversation, "Node": Node, "Branch": Branch,
         "NodeAncestry": NodeAncestry, "ContextPin": ContextPin,
         "ContextImport": ContextImport, "NodeSummary": NodeSummary,
-        "Tag": Tag, "NodeTag": NodeTag, "BranchShare": BranchShare,
+        "Tag": Tag, "NodeTag": NodeTag,
     }
 except NameError:
     pass
@@ -167,16 +166,6 @@ if "NodeTag" in all_models:
     test("NodeTag PK is (node_id, tag_id)",
          pk_cols == {"node_id", "tag_id"}, f"got {pk_cols}")
 
-# BranchShare
-if "BranchShare" in all_models:
-    cols = get_col_names(BranchShare)
-    expected = {"id", "branch_id", "shared_with", "permission", "created_at"}
-    test("BranchShare has all 5 columns",
-         expected <= cols, f"missing: {expected - cols}")
-    shared_col = BranchShare.__table__.c.shared_with
-    test("BranchShare.shared_with is nullable (null=public)",
-         shared_col.nullable is True, "not nullable")
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  4. FOREIGN KEY VERIFICATION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -196,7 +185,6 @@ fk_expectations = {
     "ContextImport": {"target_branch_id": "branches.id", "source_node_id": "nodes.id", "imported_by": "users.id"},
     "NodeSummary": {"summary_node_id": "nodes.id", "summarized_node_id": "nodes.id"},
     "NodeTag": {"node_id": "nodes.id", "tag_id": "tags.id"},
-    "BranchShare": {"branch_id": "branches.id", "shared_with": "users.id"},
 }
 
 for model_name, expected_fks in fk_expectations.items():
