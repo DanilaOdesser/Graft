@@ -65,4 +65,12 @@ export const api = {
     request("/users/register", { method: "POST", body: JSON.stringify(data) }),
   loginUser: (data) =>
     request("/users/login", { method: "POST", body: JSON.stringify(data) }),
+  getTags: () =>
+    request("/tags"),
+  createTag: (name) =>
+    request("/tags", { method: "POST", body: JSON.stringify({ name }) }),
+  getNodeTags: (nodeId) =>
+    request(`/nodes/${nodeId}/tags`),
+  setNodeTags: (nodeId, tagIds) =>
+    request(`/nodes/${nodeId}/tags`, { method: "PUT", body: JSON.stringify({ tag_ids: tagIds }) }),
 };
