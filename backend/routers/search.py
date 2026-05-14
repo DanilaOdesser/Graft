@@ -9,6 +9,7 @@ from db import get_db
 router = APIRouter()
 
 
+# Query 2 from db/queries.sql — Branch divergence report.
 DIVERGENCE_SQL = """
 WITH a_head AS (SELECT head_node_id FROM branches WHERE id = :branch_a),
      b_head AS (SELECT head_node_id FROM branches WHERE id = :branch_b),
@@ -51,6 +52,7 @@ SELECT
   (SELECT json_agg(node_id) FROM only_b) AS only_b_nodes;
 """
 
+# Query 3 from db/queries.sql — Full-text search across conversations.
 SEARCH_SQL = """
 SELECT
   n.id              AS node_id,
@@ -72,6 +74,7 @@ ORDER BY rank DESC, n.created_at DESC
 LIMIT :k;
 """
 
+# Query 3 variant with tag filter.
 SEARCH_SQL_TAG = """
 SELECT
   n.id              AS node_id,

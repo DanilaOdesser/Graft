@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
@@ -10,6 +10,9 @@ import ConversationGraph from "../components/ConversationGraph";
 import ImportModal from "../components/ImportModal";
 import TagPopover from "../components/TagPopover";
 import { tagColor } from "../tagColor";
+import useConversationSSE from "../hooks/useConversationSSE";
+import useSyncClaude from "../hooks/useSyncClaude";
+import useGraphNodeActions from "../hooks/useGraphNodeActions";
 
 export default function ConversationView() {
   const { user } = useAuth();
@@ -28,21 +31,32 @@ export default function ConversationView() {
   const [pinningNode, setPinningNode] = useState(null);
   const [pinPriority, setPinPriority] = useState(5);
   const [pinReason, setPinReason] = useState("");
-  const [selectedGraphNode, setSelectedGraphNode] = useState(null);
-  const [makingBranch, setMakingBranch] = useState(false);
-  const [newBranchName, setNewBranchName] = useState("");
-  const [branchCreateError, setBranchCreateError] = useState("");
-  const [makingSummary, setMakingSummary] = useState(false);
-  const [summarizeBranchName, setSummarizeBranchName] = useState("");
-  const [summarizeError, setSummarizeError] = useState("");
-  const [summarizing, setSummarizing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncToast, setSyncToast] = useState(null);
-  const [selectedNodeTags, setSelectedNodeTags] = useState([]);
-  const [showTagEditor, setShowTagEditor] = useState(false);
-  const selectedGraphNodeRef = useRef(null);
+  const [allPins, setAllPins] = useState([]);
+  const [allImports, setAllImports] = useState([]);
 
-  // Load conversation + branches
+  // --- Custom hooks ---
+
+  const graphActions = useGraphNodeActions(id, user.id, { setSelected, setBranches });
+
+  const handleTurnComplete = useCallback(() => {
+    setPendingMessages([]);
+    refreshContext();
+  }, []);
+
+  const { syncing, syncToast, handleSyncClaude } = useSyncClaude(selected, handleTurnComplete);
+
+  useConversationSSE(id, {
+    setBranches,
+    setSelected,
+    setAllNodes,
+    setAllPins,
+    setAllImports,
+    setSelectedNodeTags: graphActions.setSelectedNodeTags,
+    selectedGraphNodeRef: graphActions.selectedGraphNodeRef,
+  });
+
+  // --- Data loading ---
+
   useEffect(() => {
     api.getConversation(id).then((data) => {
       setConv(data);
@@ -52,9 +66,6 @@ export default function ConversationView() {
     }).catch(() => {});
   }, [id]);
 
-  // Fetch context for selected branch (thread view).
-  // Does NOT touch pendingMessages — clearing them is the caller's responsibility
-  // so that a mid-turn SSE-triggered refresh doesn't wipe the optimistic messages.
   const refreshContext = useCallback(() => {
     if (!selected?.head_node_id) return;
     api.getContext(selected.head_node_id, 8000)
@@ -66,14 +77,8 @@ export default function ConversationView() {
   }, [selected]);
 
   useEffect(() => { refreshContext(); }, [refreshContext]);
-
-  // Clear pending messages whenever the active branch changes (user switched branch).
   useEffect(() => { setPendingMessages([]); }, [selected?.id]);
 
-  const [allPins, setAllPins] = useState([]);
-  const [allImports, setAllImports] = useState([]);
-
-  // Fetch ALL nodes + pins + imports for the graph view
   const refreshAllNodes = useCallback(() => {
     api.getConversationNodes(id)
       .then((data) => setAllNodes(Array.isArray(data) ? data : []))
@@ -91,70 +96,6 @@ export default function ConversationView() {
   useEffect(() => { refreshAllNodes(); }, [refreshAllNodes]);
   useEffect(() => { refreshPinsAndImports(); }, [refreshPinsAndImports]);
 
-  // SSE live updates
-  useEffect(() => {
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
-    const es = new EventSource(`${API_URL}/conversations/${id}/stream`);
-
-    es.addEventListener("node_created", (e) => {
-      const { node } = JSON.parse(e.data);
-      setAllNodes((prev) => prev.some((n) => n.id === node.id) ? prev : [...prev, node]);
-    });
-
-    es.addEventListener("branch_updated", (e) => {
-      const { branch } = JSON.parse(e.data);
-      setBranches((prev) => {
-        const exists = prev.some((b) => b.id === branch.id);
-        return exists
-          ? prev.map((b) => (b.id === branch.id ? branch : b))
-          : [...prev, branch];
-      });
-      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
-    });
-
-    es.addEventListener("pin_created", (e) => {
-      const { pin } = JSON.parse(e.data);
-      setAllPins((prev) => prev.some((p) => p.id === pin.id) ? prev : [...prev, pin]);
-    });
-
-    es.addEventListener("pin_deleted", (e) => {
-      const { pin_id } = JSON.parse(e.data);
-      setAllPins((prev) => prev.filter((p) => p.id !== pin_id));
-    });
-
-    es.addEventListener("import_created", (e) => {
-      const { import: imp } = JSON.parse(e.data);
-      setAllImports((prev) => prev.some((i) => i.id === imp.id) ? prev : [...prev, imp]);
-    });
-
-    es.addEventListener("import_deleted", (e) => {
-      const { import_id } = JSON.parse(e.data);
-      setAllImports((prev) => prev.filter((i) => i.id !== import_id));
-    });
-
-    es.addEventListener("commit_created", (e) => {
-      const { node, branch, summarized_node_ids = [] } = JSON.parse(e.data);
-      setAllNodes((prev) => {
-        const filtered = prev.filter((n) => !summarized_node_ids.includes(n.id));
-        return filtered.some((n) => n.id === node.id) ? filtered : [...filtered, node];
-      });
-      setBranches((prev) => prev.map((b) => (b.id === branch.id ? branch : b)));
-      setSelected((prev) => (prev?.id === branch.id ? branch : prev));
-    });
-
-    es.addEventListener("node_tags_updated", (e) => {
-      const { node_id, tags } = JSON.parse(e.data);
-      if (node_id === selectedGraphNodeRef.current?.id) {
-        setSelectedNodeTags(Array.isArray(tags) ? tags : []);
-      }
-    });
-
-    es.onerror = () => { /* SSE auto-reconnects; suppress console noise */ };
-
-    return () => es.close();
-  }, [id]);
-
-  // Imports
   const refreshImports = useCallback(() => {
     if (!selected?.id) return;
     api.getImports(selected.id).then((data) => setImports(Array.isArray(data) ? data : [])).catch(() => setImports([]));
@@ -162,10 +103,11 @@ export default function ConversationView() {
 
   useEffect(() => { if (showImports) refreshImports(); }, [showImports, refreshImports]);
 
+  // --- Handlers ---
+
   const handleCreateBranch = async (name) => {
     if (!selected?.head_node_id) return;
     const br = await api.createBranch(id, { name, fork_node_id: selected.head_node_id, created_by: user.id });
-    // SSE branch_updated may arrive before this await resolves — dedup to avoid a double entry.
     setBranches((prev) => prev.some((b) => b.id === br.id) ? prev : [...prev, br]);
     setSelected(br);
   };
@@ -181,33 +123,11 @@ export default function ConversationView() {
     [allNodes, selected]
   );
 
-  const handleTurnComplete = () => {
-    setPendingMessages([]);  // clear optimistic messages; real data is arriving
-    refreshContext();
-  };
-
   const handleOptimisticSend = (text) => {
     setPendingMessages([
       { id: "pending-user", role: "user", content: text, token_count: Math.ceil(text.split(" ").length * 1.3) },
       { id: "pending-assistant", role: "assistant", content: null, token_count: 0, _loading: true },
     ]);
-  };
-
-  const handleSyncClaude = async () => {
-    if (!selected || syncing) return;
-    setSyncing(true);
-    setSyncToast(null);
-    try {
-      const r = await api.syncClaude(selected.id);
-      setSyncToast({ count: r.synced_from_claude });
-      if (r.synced_from_claude > 0) handleTurnComplete();
-      // Auto-dismiss after a few seconds
-      setTimeout(() => setSyncToast(null), 3500);
-    } catch (e) {
-      setSyncToast({ error: String(e) });
-    } finally {
-      setSyncing(false);
-    }
   };
 
   const handlePin = async () => {
@@ -228,82 +148,7 @@ export default function ConversationView() {
     setImports((prev) => prev.filter((i) => i.id !== impId));
   };
 
-  const handleGraphNodeSelect = (nodeData) => {
-    setSelectedGraphNode(nodeData);
-    selectedGraphNodeRef.current = nodeData;
-    setShowTagEditor(false);
-    setMakingBranch(false);
-    setNewBranchName("");
-    setBranchCreateError("");
-    setMakingSummary(false);
-    setSummarizeBranchName("");
-    setSummarizeError("");
-    // fetch tags for this node
-    if (nodeData?.id) {
-      api.getNodeTags(nodeData.id)
-        .then(tags => setSelectedNodeTags(Array.isArray(tags) ? tags : []))
-        .catch(() => setSelectedNodeTags([]));
-    }
-  };
-
-  const handleCreateBranchFromNode = async () => {
-    if (!newBranchName.trim() || !selectedGraphNode) return;
-    setBranchCreateError("");
-    try {
-      const br = await api.createBranch(id, {
-        name: newBranchName.trim(),
-        fork_node_id: selectedGraphNode.id,
-        created_by: user.id,
-      });
-      if (br?.detail) {
-        if (String(br.detail).toLowerCase().includes("already")) {
-          setBranchCreateError("Branch name already exists.");
-        } else {
-          setBranchCreateError("Failed to create branch.");
-        }
-        return;
-      }
-      setSelected(br);
-      setBranches((prev) => {
-        const exists = prev.some((b) => b.id === br.id);
-        return exists ? prev : [...prev, br];
-      });
-      setMakingBranch(false);
-      setNewBranchName("");
-    } catch (err) {
-      setBranchCreateError("Failed to create branch.");
-    }
-  };
-
-  const handleSummarize = async () => {
-    if (!summarizeBranchName.trim() || !selectedGraphNode) return;
-    setSummarizeError("");
-    setSummarizing(true);
-    try {
-      const res = await api.summarizeNode(selectedGraphNode.id, {
-        branch_name: summarizeBranchName.trim(),
-        created_by: user.id,
-      });
-      if (res?.detail) {
-        setSummarizeError(typeof res.detail === "string" ? res.detail : "Failed to summarize.");
-        return;
-      }
-      // SSE commit_created + branch_updated handle graph/branch updates
-      if (res?.branch) {
-        setSelected(res.branch);
-        setBranches((prev) => {
-          const exists = prev.some((b) => b.id === res.branch.id);
-          return exists ? prev : [...prev, res.branch];
-        });
-      }
-      setMakingSummary(false);
-      setSummarizeBranchName("");
-    } catch (err) {
-      setSummarizeError("Failed to summarize.");
-    } finally {
-      setSummarizing(false);
-    }
-  };
+  // --- Render ---
 
   if (!conv) {
     return (
@@ -312,6 +157,8 @@ export default function ConversationView() {
       </div>
     );
   }
+
+  const { selectedGraphNode, setSelectedGraphNode, selectedNodeTags, setSelectedNodeTags, showTagEditor, setShowTagEditor } = graphActions;
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -339,7 +186,7 @@ export default function ConversationView() {
             {["thread", "graph"].map((t) => (
               <button
                 key={t}
-                onClick={() => { setTab(t); setSelectedGraphNode(null); if (t === "graph") { refreshAllNodes(); refreshPinsAndImports(); } }}
+                onClick={() => { setTab(t); graphActions.setSelectedGraphNode(null); if (t === "graph") { refreshAllNodes(); refreshPinsAndImports(); } }}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   tab === t
                     ? "bg-[var(--color-blue-dim)] text-[var(--color-blue)]"
@@ -419,7 +266,7 @@ export default function ConversationView() {
                 branches={branches}
                 pins={allPins}
                 imports={allImports}
-                onNodeSelect={handleGraphNodeSelect}
+                onNodeSelect={graphActions.handleGraphNodeSelect}
                 selectedNodeId={selectedGraphNode?.id}
                 conversationId={id}
                 userId={user.id}
@@ -433,7 +280,7 @@ export default function ConversationView() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
                 <h3 className="text-xs font-semibold text-[var(--color-text)]">Node Details</h3>
                 <button
-                  onClick={() => setSelectedGraphNode(null)}
+                  onClick={() => graphActions.setSelectedGraphNode(null)}
                   className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -534,9 +381,9 @@ export default function ConversationView() {
 
                     {/* Branch creation */}
                     <div className="mt-1 pt-1 border-t border-[var(--color-border)]">
-                      {!makingBranch ? (
+                      {!graphActions.makingBranch ? (
                         <button
-                          onClick={() => { setMakingBranch(true); setBranchCreateError(""); setMakingSummary(false); }}
+                          onClick={() => { graphActions.setMakingBranch(true); graphActions.setBranchCreateError(""); graphActions.setMakingSummary(false); }}
                           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-blue)] hover:text-[var(--color-blue)] hover:bg-[var(--color-blue-dim)] transition-colors text-left"
                         >
                           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -547,26 +394,26 @@ export default function ConversationView() {
                       ) : (
                         <div className="space-y-1.5">
                           <input
-                            value={newBranchName}
-                            onChange={(e) => setNewBranchName(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleCreateBranchFromNode()}
+                            value={graphActions.newBranchName}
+                            onChange={(e) => graphActions.setNewBranchName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && graphActions.handleCreateBranchFromNode()}
                             placeholder="Branch name…"
                             autoFocus
                             className="w-full px-2 py-1.5 text-xs rounded border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-blue)]"
                           />
-                          {branchCreateError && (
-                            <p className="text-[10px] text-[var(--color-red)]">{branchCreateError}</p>
+                          {graphActions.branchCreateError && (
+                            <p className="text-[10px] text-[var(--color-red)]">{graphActions.branchCreateError}</p>
                           )}
                           <div className="flex gap-1.5">
                             <button
-                              onClick={handleCreateBranchFromNode}
-                              disabled={!newBranchName.trim()}
+                              onClick={graphActions.handleCreateBranchFromNode}
+                              disabled={!graphActions.newBranchName.trim()}
                               className="flex-1 px-2 py-1 text-xs rounded bg-[var(--color-blue)] text-white font-medium disabled:opacity-40"
                             >
                               Create
                             </button>
                             <button
-                              onClick={() => { setMakingBranch(false); setNewBranchName(""); setBranchCreateError(""); }}
+                              onClick={() => { graphActions.setMakingBranch(false); graphActions.setNewBranchName(""); graphActions.setBranchCreateError(""); }}
                               className="px-2 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-text-dim)]"
                             >
                               Cancel
@@ -578,9 +425,9 @@ export default function ConversationView() {
 
                     {/* Summarize into new branch */}
                     <div className="pt-1 border-t border-[var(--color-border)]">
-                      {!makingSummary ? (
+                      {!graphActions.makingSummary ? (
                         <button
-                          onClick={() => { setMakingSummary(true); setSummarizeError(""); setMakingBranch(false); }}
+                          onClick={() => { graphActions.setMakingSummary(true); graphActions.setSummarizeError(""); graphActions.setMakingBranch(false); }}
                           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-dim)] hover:border-[var(--color-violet)] hover:text-[var(--color-violet)] hover:bg-[var(--color-violet-dim)] transition-colors text-left"
                         >
                           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -592,26 +439,26 @@ export default function ConversationView() {
                         <div className="space-y-1.5">
                           <p className="text-[10px] text-[var(--color-text-faint)]">LLM will summarize this node's content into a new summary node on a new branch.</p>
                           <input
-                            value={summarizeBranchName}
-                            onChange={(e) => setSummarizeBranchName(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleSummarize()}
+                            value={graphActions.summarizeBranchName}
+                            onChange={(e) => graphActions.setSummarizeBranchName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && graphActions.handleSummarize()}
                             placeholder="New branch name…"
                             autoFocus
                             className="w-full px-2 py-1.5 text-xs rounded border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-violet)]"
                           />
-                          {summarizeError && (
-                            <p className="text-[10px] text-[var(--color-red)]">{summarizeError}</p>
+                          {graphActions.summarizeError && (
+                            <p className="text-[10px] text-[var(--color-red)]">{graphActions.summarizeError}</p>
                           )}
                           <div className="flex gap-1.5">
                             <button
-                              onClick={handleSummarize}
-                              disabled={!summarizeBranchName.trim() || summarizing}
+                              onClick={graphActions.handleSummarize}
+                              disabled={!graphActions.summarizeBranchName.trim() || graphActions.summarizing}
                               className="flex-1 px-2 py-1 text-xs rounded bg-[var(--color-violet)] text-white font-medium disabled:opacity-40"
                             >
-                              {summarizing ? "Summarizing..." : "Summarize"}
+                              {graphActions.summarizing ? "Summarizing..." : "Summarize"}
                             </button>
                             <button
-                              onClick={() => { setMakingSummary(false); setSummarizeBranchName(""); setSummarizeError(""); }}
+                              onClick={() => { graphActions.setMakingSummary(false); graphActions.setSummarizeBranchName(""); graphActions.setSummarizeError(""); }}
                               className="px-2 py-1 text-xs rounded border border-[var(--color-border)] text-[var(--color-text-dim)]"
                             >
                               Cancel

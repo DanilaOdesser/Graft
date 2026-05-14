@@ -53,7 +53,7 @@ The query is in `routers/branches.py`. Do not duplicate it.
 
 `sse.py` maintains an in-process `dict[str, list[asyncio.Queue]]`. Every mutation endpoint calls `await publish(conv_id, event_type, payload)` after committing. The frontend listens on `GET /api/conversations/{id}/stream`.
 
-All 7 event types and their handlers are in `ConversationView.jsx`. If you add a new mutation, publish an SSE event and handle it there.
+All 8 event types and their handlers are in `ConversationView.jsx`. If you add a new mutation, publish an SSE event and handle it there.
 
 ### Commit flow
 
@@ -78,7 +78,7 @@ The frontend `commit_created` handler filters those IDs from `allNodes` and appe
 - Linearizes ancestry oldest-first, writes a JSONL file to `~/.claude/projects/<encoded-cwd>/`
 - On macOS with `launch=true`, spawns Terminal via AppleScript
 - Records a `ClaudeExport` row so subsequent syncs can diff new CC turns
-- **Known issue**: currently skips commit/summary nodes in the linearization. See `docs/known-bugs.md`.
+- Commit/summary nodes are injected into the preamble as `[Committed context]` blocks.
 
 ---
 
@@ -89,8 +89,7 @@ The frontend `commit_created` handler filters those IDs from `allNodes` and appe
 - All mutation endpoints must be `async def` and call `await publish(...)` after `db.commit()`.
 - Capture IDs **before** delete; `db.delete(obj)` then `db.commit()` makes the object unusable.
 - Use `db.flush()` → work with the object → `db.commit()` when you need the generated ID mid-transaction.
-- The `_branch_to_dict` helper is duplicated in `agent.py` and `branches.py`. Don't add a third copy — consolidate when touched.
-- Token count formula everywhere: `int(len(content.split()) * 1.3)`.
+- Shared helpers (`branch_to_dict`, `node_to_dict`, `token_count`) live in `helpers.py`. Import from there — never redefine locally.
 
 ### Frontend
 
@@ -109,7 +108,7 @@ The frontend `commit_created` handler filters those IDs from `allNodes` and appe
 
 ## Known issues
 
-See [`docs/known-bugs.md`](docs/known-bugs.md) for the active bug list.
+See [`docs/known-bugs.md`](docs/known-bugs.md) — all known bugs have been resolved.
 
 ---
 
@@ -117,6 +116,7 @@ See [`docs/known-bugs.md`](docs/known-bugs.md) for the active bug list.
 
 | What you're touching | Where to look |
 |----------------------|---------------|
+| Shared serialization helpers | `helpers.py` — `branch_to_dict`, `node_to_dict`, `token_count` |
 | Context assembly SQL | `routers/branches.py` — `QUERY_1_CONTEXT_ASSEMBLY` |
 | LLM call + system prompt | `llm.py` — `call_llm` |
 | Agent turn (insert nodes, call LLM) | `routers/agent.py` |
@@ -124,8 +124,12 @@ See [`docs/known-bugs.md`](docs/known-bugs.md) for the active bug list.
 | Node summarization | `routers/nodes.py` — `summarize_node` |
 | SSE pub/sub | `sse.py` |
 | Export to Claude Code | `routers/export.py` |
+| Tags CRUD + node tagging | `routers/tags.py` |
+| User registration + login | `routers/users.py` |
 | DB models | `models/core.py`, `models/context.py` |
 | All frontend state + SSE listener | `pages/ConversationView.jsx` |
 | Commit graph rendering | `components/ConversationGraph.jsx` |
 | Thread rendering + export button | `components/MessageThread.jsx` |
 | Commit input | `components/BranchSidebar.jsx` |
+| Tag editor popover | `components/TagPopover.jsx` |
+| Full-text search + tag facets | `pages/SearchPage.jsx` |

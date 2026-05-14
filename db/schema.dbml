@@ -9,6 +9,7 @@ Table users {
   id uuid [pk]
   email varchar(255) [unique, not null]
   display_name varchar(100) [not null]
+  password_hash text
   created_at timestamptz [not null, default: `now()`]
 }
 
@@ -146,6 +147,25 @@ Table node_tags {
   Indexes {
     (node_id, tag_id) [pk]
     tag_id
+  }
+}
+
+// ---------- Claude Code integration ----------
+
+Table claude_exports {
+  session_id uuid [pk]
+  conversation_id uuid [not null, ref: > conversations.id]
+  branch_id uuid [not null, ref: > branches.id]
+  source_node_id uuid [not null, ref: > nodes.id]
+  file_path text [not null]
+  cwd text [not null]
+  exported_message_count int [not null]
+  last_imported_uuid text
+  exported_at timestamptz [not null, default: `now()`]
+  last_imported_at timestamptz
+
+  Indexes {
+    (branch_id, exported_at) [name: 'idx_claude_exports_branch']
   }
 }
 

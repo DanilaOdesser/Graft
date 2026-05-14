@@ -23,6 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db import get_db
+from helpers import token_count
 from models.context import ClaudeExport
 from models.core import Branch, Node
 
@@ -41,11 +42,6 @@ def _encode_cwd(path: str) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _token_count(content: str) -> int:
-    """Match the formula used by routers/agent.py and routers/conversations.py."""
-    return int(len(content.split()) * 1.3)
 
 
 def _extract_text(message: dict) -> str | None:
@@ -201,7 +197,7 @@ def _sync_branch_from_cc(db: Session, branch: Branch) -> int:
                 node_type="message",
                 role=entry["type"],  # 'user' or 'assistant'
                 content=entry["text"],
-                token_count=_token_count(entry["text"]),
+                token_count=token_count(entry["text"]),
             )
             db.add(new_node)
             db.flush()

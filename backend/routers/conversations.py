@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db import get_db
+from helpers import branch_to_dict, token_count
 from models.core import Branch, Conversation, Node
 from sse import subscribe, event_generator
 from schemas import (
@@ -33,24 +34,6 @@ router = APIRouter()
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant. This conversation is managed by Graft."
 )
-
-
-def _token_count(content: str) -> int:
-    """Match DEV-B's formula in routers/nodes.py — keep byte-identical."""
-    return int(len(content.split()) * 1.3)
-
-
-def _branch_to_dict(b: Branch) -> dict:
-    return {
-        "id": str(b.id),
-        "conversation_id": str(b.conversation_id),
-        "name": b.name,
-        "head_node_id": str(b.head_node_id) if b.head_node_id else None,
-        "base_node_id": str(b.base_node_id) if b.base_node_id else None,
-        "created_by": str(b.created_by),
-        "is_archived": b.is_archived,
-        "created_at": str(b.created_at),
-    }
 
 
 def _conv_to_dict(c: Conversation) -> dict:
@@ -95,7 +78,7 @@ def create_conversation(body: ConversationCreate, db: Session = Depends(get_db))
         node_type="message",
         role="system",
         content=SYSTEM_PROMPT,
-        token_count=_token_count(SYSTEM_PROMPT),
+        token_count=token_count(SYSTEM_PROMPT),
     )
     db.add(root)
     db.flush()
@@ -136,7 +119,7 @@ def get_conversation(conv_id: uuid.UUID, db: Session = Depends(get_db)):
         .all()
     )
     payload = _conv_to_dict(conv)
-    payload["branches"] = [_branch_to_dict(b) for b in branches]
+    payload["branches"] = [branch_to_dict(b) for b in branches]
     return payload
 
 

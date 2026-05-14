@@ -6,6 +6,7 @@ from typing import Optional
 import uuid
 
 from db import get_db
+from helpers import branch_to_dict, node_to_dict, token_count
 from models.core import Node, Branch
 from models.context import NodeSummary
 from sse import publish
@@ -30,7 +31,7 @@ class SummarizeRequest(BaseModel):
 
 @router.post("/nodes", status_code=201)
 def create_node(body: NodeCreate, db: Session = Depends(get_db)):
-    token_count = int(len(body.content.split()) * 1.3)
+    tc = token_count(body.content)
     node = Node(
         id=uuid.uuid4(),
         conversation_id=body.conversation_id,
@@ -39,7 +40,7 @@ def create_node(body: NodeCreate, db: Session = Depends(get_db)):
         node_type=body.node_type,
         role=body.role,
         content=body.content,
-        token_count=token_count,
+        token_count=tc,
     )
     db.add(node)
     db.flush()
@@ -52,17 +53,7 @@ def create_node(body: NodeCreate, db: Session = Depends(get_db)):
     )
     db.commit()
     db.refresh(node)
-    return {
-        "id": str(node.id),
-        "conversation_id": str(node.conversation_id),
-        "parent_id": str(node.parent_id) if node.parent_id else None,
-        "branch_id": str(node.branch_id),
-        "node_type": node.node_type,
-        "role": node.role,
-        "content": node.content,
-        "token_count": node.token_count,
-        "created_at": str(node.created_at),
-    }
+    return node_to_dict(node)
 
 
 @router.get("/conversations/{conv_id}/nodes")
@@ -83,17 +74,7 @@ def list_conversation_nodes(conv_id: uuid.UUID, db: Session = Depends(get_db)):
         .all()
     )
     return [
-        {
-            "id": str(n.id),
-            "conversation_id": str(n.conversation_id),
-            "parent_id": str(n.parent_id) if n.parent_id else None,
-            "branch_id": str(n.branch_id),
-            "node_type": n.node_type,
-            "role": n.role,
-            "content": n.content,
-            "token_count": n.token_count,
-            "created_at": str(n.created_at),
-        }
+        node_to_dict(n)
         for n in nodes
         if str(n.id) not in summarized_ids
     ]
@@ -104,17 +85,7 @@ def get_node(node_id: uuid.UUID, db: Session = Depends(get_db)):
     node = db.query(Node).filter(Node.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-    return {
-        "id": str(node.id),
-        "conversation_id": str(node.conversation_id),
-        "parent_id": str(node.parent_id) if node.parent_id else None,
-        "branch_id": str(node.branch_id),
-        "node_type": node.node_type,
-        "role": node.role,
-        "content": node.content,
-        "token_count": node.token_count,
-        "created_at": str(node.created_at),
-    }
+    return node_to_dict(node)
 
 
 @router.post("/nodes/{node_id}/summarize", status_code=201)
@@ -153,7 +124,7 @@ async def summarize_node(
         node_type="summary",
         role=None,
         content=content,
-        token_count=int(len(content.split()) * 1.3),
+        token_count=token_count(content),
     )
     db.add(summary_node)
     db.flush()
@@ -176,27 +147,9 @@ async def summarize_node(
     db.refresh(summary_node)
     db.refresh(new_branch)
 
-    node_dict = {
-        "id": str(summary_node.id),
-        "conversation_id": str(summary_node.conversation_id),
-        "parent_id": str(summary_node.parent_id) if summary_node.parent_id else None,
-        "branch_id": str(summary_node.branch_id),
-        "node_type": summary_node.node_type,
-        "role": summary_node.node_type,
-        "content": summary_node.content,
-        "token_count": summary_node.token_count,
-        "created_at": str(summary_node.created_at),
-    }
-    branch_dict = {
-        "id": str(new_branch.id),
-        "conversation_id": str(new_branch.conversation_id),
-        "name": new_branch.name,
-        "head_node_id": str(new_branch.head_node_id),
-        "base_node_id": str(new_branch.base_node_id),
-        "created_by": str(new_branch.created_by),
-        "is_archived": new_branch.is_archived,
-        "created_at": str(new_branch.created_at),
-    }
+    node_dict = node_to_dict(summary_node)
+    node_dict["role"] = summary_node.node_type  # role col is NULL for summary; return node_type instead
+    branch_dict = branch_to_dict(new_branch)
 
     # commit_created SSE removes the original node from the graph and adds the summary
     await publish(str(node.conversation_id), "commit_created", {

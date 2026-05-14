@@ -1,5 +1,7 @@
 # Known Bugs
 
+> **Status: All known bugs have been resolved.** The entries below are kept as a historical record of issues discovered and fixed during development.
+
 ## ~~1. Optimistic message sometimes doesn't appear on first send~~ ✓ Fixed
 
 **Symptom:** After hitting Send, the user message doesn't show up in the thread immediately. Usually happens the first time a message is sent on a branch. The message does land (API succeeds) and appears after `refreshContext()` completes.
