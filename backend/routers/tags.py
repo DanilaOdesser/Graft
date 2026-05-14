@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
@@ -30,17 +31,15 @@ def list_tags(db: Session = Depends(get_db)):
     return [_tag_dict(t) for t in tags]
 
 
-@router.post("/tags")
-async def create_tag(body: TagCreate, response: Response, db: Session = Depends(get_db)):
+@router.post("/tags", status_code=201)
+def create_tag(body: TagCreate, db: Session = Depends(get_db)):
     existing = db.query(Tag).filter(Tag.name.ilike(body.name)).first()
     if existing:
-        response.status_code = 200
-        return _tag_dict(existing)
+        return JSONResponse(status_code=200, content=_tag_dict(existing))
     tag = Tag(id=uuid.uuid4(), name=body.name)
     db.add(tag)
     db.commit()
     db.refresh(tag)
-    response.status_code = 201
     return _tag_dict(tag)
 
 
@@ -67,14 +66,14 @@ async def set_node_tags(node_id: uuid.UUID, body: TagSetBody, db: Session = Depe
 
     # Validate all provided tag IDs exist
     if body.tag_ids:
-        found_tags = db.query(Tag).filter(Tag.id.in_(body.tag_ids)).all()
+        found_tags = db.query(Tag).filter(Tag.id.in_(body.tag_ids)).order_by(Tag.name).all()
         if len(found_tags) != len(body.tag_ids):
             raise HTTPException(status_code=404, detail="One or more tag IDs not found")
     else:
         found_tags = []
 
     # Replace full tag set
-    db.query(NodeTag).filter(NodeTag.node_id == node_id).delete()
+    db.query(NodeTag).filter(NodeTag.node_id == node_id).delete(synchronize_session=False)
     for tag in found_tags:
         db.add(NodeTag(node_id=node_id, tag_id=tag.id))
 
